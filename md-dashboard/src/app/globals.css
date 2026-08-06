@@ -1,0 +1,207 @@
+/* @import "tailwindcss";                        
+26.08.05 UI 변경에 따른 코드 수정, 입체감 효과 추가 
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+*/
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --c1: #D1D5E3;
+  --c2: #B0B3BF;
+  --c3: #8A8D96;
+  --c4: #65676E;
+  --c5: #3F4145;
+  --glass: rgba(255, 255, 255, 0.54);
+  --glass-strong: rgba(255, 255, 255, 0.72);
+  --stroke: rgba(255, 255, 255, 0.68);
+  --shadow: 0 24px 70px rgba(63, 65, 69, 0.14);
+  --danger: #8F4A40;
+  --warning: #8A6A2C;
+  --info: #496B8F;
+  --ok: #4F7761;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--c5);
+  font-family: Pretendard, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background:
+    radial-gradient(circle at 14% 10%, rgba(191, 219, 254, 0.95), transparent 28%),
+    radial-gradient(circle at 84% 12%, rgba(221, 214, 254, 0.88), transparent 30%),
+    radial-gradient(circle at 78% 82%, rgba(207, 250, 254, 0.82), transparent 28%),
+    linear-gradient(145deg, #f7f9fc 0%, #edf2f7 46%, #f8fafc 100%);
+  background-attachment: fixed;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(115deg, rgba(255, 255, 255, 0.5), transparent 43%);
+}
+
+/* Glassmorphism 메인 클래스 */
+.glass {
+  background: var(--glass);
+  border: 1px solid var(--stroke);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(30px) saturate(160%);
+  -webkit-backdrop-filter: blur(30px) saturate(160%);
+}
+
+/* 상태 배지 커스텀 클래스 */
+.badge-danger { color: var(--danger); background: rgba(253, 226, 222, 0.72); }
+.badge-warning { color: var(--warning); background: rgba(253, 243, 210, 0.72); }
+.badge-info { color: var(--info); background: rgba(220, 235, 250, 0.70); }
+.badge-ok { color: var(--ok); background: rgba(224, 242, 232, 0.70); }
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 글래스모피즘 및 배경 스타일 정의 */
+body {
+  background: linear-gradient(135deg, #eef2f3 0%, #e8edf5 50%, #f3eef5 100%);
+  min-height: 100vh;
+  color: #3f4145;
+}
+
+.glass {
+  background: rgba(255, 255, 255, 0.45) !important;
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.6) !important;
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.05);
+}
+
+/* 뱃지 스타일 정의 */
+.badge-ok {
+  background-color: rgba(79, 119, 97, 0.15);
+  color: #3b5c4a;
+}
+
+.badge-info {
+  background-color: rgba(73, 107, 143, 0.15);
+  color: #35506c;
+}
+
+.badge-warning {
+  background-color: rgba(138, 106, 44, 0.15);
+  color: #6a5121;
+}
+
+.badge-danger {
+  background-color: rgba(143, 74, 64, 0.15);
+  color: #6d3830;
+}
+
+/* 26.08.05 Tailwimd v4 대응 이런 쌰갈 */
+@import "tailwindcss";
+
+/* 글래스모피즘 및 배경 기본값 강제 적용 */
+body {
+  background: linear-gradient(135deg, #eef2f3 0%, #e8edf5 50%, #f3eef5 100%) !important;
+  min-height: 100vh;
+  color: #3f4145;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+/* KPI 4열 그리드 강제 스타일 */
+.kpi-grid-container {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 1.25rem !important;
+  margin-bottom: 1.5rem !important;
+  width: 100% !important;
+}
+
+@media (max-width: 1024px) {
+  .kpi-grid-container {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .kpi-grid-container {
+    grid-template-columns: repeat(1, minmax(0, 1fr)) !important;
+  }
+}
+
+/* 글래스 카드 강제 스타일 */
+.glass-card {
+  background: rgba(255, 255, 255, 0.55) !important;
+  backdrop-filter: blur(16px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(180%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.7) !important;
+  border-radius: 24px !important;
+  padding: 1.25rem !important;
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.04) !important;
+}
+
+/* 뱃지 강제 스타일 */
+.badge-ok {
+  background-color: rgba(79, 119, 97, 0.15) !important;
+  color: #3b5c4a !important;
+}
+
+.badge-info {
+  background-color: rgba(73, 107, 143, 0.15) !important;
+  color: #35506c !important;
+}
+
+/* app/globals.css 맨 하단에 추가 */
+
+/* 예시 대시보드의 입체감 카드 스타일 */
+.card-3d {
+  background-color: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(12px);
+  border: 1.5px solid rgba(255, 255, 255, 0.9);
+  border-radius: 28px;
+  box-shadow: 
+    0 20px 35px -10px rgba(160, 175, 200, 0.15),
+    inset 0 1px 2px 0 rgba(255, 255, 255, 0.8);
+}
+
+/* 입체감 있는 활성화/단독 버튼 스타일 */
+.btn-3d {
+  background-color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 1);
+  border-radius: 16px;
+  box-shadow: 
+    0 10px 20px -5px rgba(140, 150, 170, 0.12),
+    0 2px 4px -1px rgba(0, 0, 0, 0.04);
+  transition: all 0.2s ease;
+}
+
+.btn-3d:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 24px -4px rgba(140, 150, 170, 0.18);
+}
