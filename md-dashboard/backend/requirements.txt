@@ -1,1 +1,9 @@
 # 26.08.04 백엔드 구축 파이썬 패키지 의존성 목록 (pyodbc, fastapi 등)
+
+fastapi
+uvicorn[standard]
+sqlalchemy
+pyodbc
+pydantic
+pydantic-settings
+python-dotenv

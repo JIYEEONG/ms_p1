@@ -2,22 +2,38 @@
 
 # 26.08.05 UI 수정으로 인한 백엔드 코드 수정
 # 26.08.06 이슈수정 테스트 코드
+# 26.08.06 예측 탭: 재고 원본(dbo.INVENTORY) 연동, 기준일 2025-12-31 고정
 
 # 기존 (ProductInventoryResponse 누락)
 # from app.schemas.dashboard import SalesTrendResponse
 
-from fastapi import APIRouter, Depends, Query
+from datetime import date, timedelta
+from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func, literal_column
 from typing import List, Optional
 
 from app.core.database import get_db
 from app.models.sales import Order
-from app.models.product import Product
+from app.models.product import Product, ProductSku
 from app.models.inventory import Inventory
-from app.schemas.dashboard import SalesTrendResponse, ProductInventoryResponse
+from app.models.inventory_raw import InventoryRaw
+from app.models.forecast import DemandForecastResult
+from app.models.purchase_order import PurchaseOrder
+from app.schemas.dashboard import (
+    SalesTrendResponse,
+    ProductInventoryResponse,
+    ForecastResponse,
+    ForecastChartPoint,
+    FilterOptionsResponse,
+    ProductOption,
+)
 
 router = APIRouter()
+
+# 원본 데이터가 2025-12-31까지만 있어서, "오늘"을 이 날짜로 고정
+REFERENCE_DATE = date(2025, 12, 31)
+
 
 @router.get("/sales-trend", response_model=List[SalesTrendResponse])
 def get_sales_trend(
@@ -27,9 +43,8 @@ def get_sales_trend(
     """
     Azure DB dbo.ORDERS 테이블 연동: 월별 순매출 조회
     """
-    # literal_column을 사용하여 SQL 원문 그대로 바인딩 없이 실행되도록 전달
     month_col = literal_column("FORMAT(dbo.ORDERS.order_datetime, 'MM')")
-    
+
     query = (
         db.query(
             month_col.label("month"),
@@ -56,14 +71,14 @@ def get_risk_products(
     query = db.query(Product, Inventory).join(
         Inventory, Product.sku == Inventory.sku
     )
-    
+
     if category and category not in ["전체", "ALL"]:
         query = query.filter(Product.category == category)
     if hub and hub not in ["전체", "ALL"]:
         query = query.filter(Inventory.hub_name == hub)
-        
+
     results = query.all()
-    
+
     response = []
     for prod, inv in results:
         response.append(
@@ -82,3 +97,121 @@ def get_risk_products(
             )
         )
     return response
+
+
+@router.get("/forecast", response_model=ForecastResponse)
+def get_forecast(
+    product_id: str = Query(..., description="사용자가 선택한 상품 (product_id 기준)"),
+    weeks: int = Query(4, ge=1, le=4, description="예측 기간(주): 1~4"),
+    db: Session = Depends(get_db)
+):
+    sku_rows = db.query(ProductSku).filter(ProductSku.product_id == product_id).all()
+    if not sku_rows:
+        raise HTTPException(status_code=404, detail=f"product_id '{product_id}' 정보를 찾을 수 없습니다.")
+    sku_ids = [r.sku_id for r in sku_rows]
+
+    # 재고: 최신 스냅샷(2025-12-31) 기준, 해당 product_id의 모든 SKU × 모든 HUB 합산
+    inv_rows = (
+        db.query(InventoryRaw)
+        .filter(InventoryRaw.sku_id.in_(sku_ids))
+        .filter(InventoryRaw.snapshot_date == REFERENCE_DATE)
+        .all()
+    )
+    current_available = sum(r.available_qty or 0 for r in inv_rows)
+    incoming = sum(r.in_transit_qty or 0 for r in inv_rows)
+
+    # 예측 데이터: 기준일 이후(week_start > 2025-12-31)를 "미래"로 취급
+    rows = (
+        db.query(DemandForecastResult)
+        .filter(DemandForecastResult.product_id == product_id)
+        .order_by(DemandForecastResult.week_start)
+        .all()
+    )
+    past_rows = [r for r in rows if r.week_start <= REFERENCE_DATE]
+    future_rows = [r for r in rows if r.week_start > REFERENCE_DATE][:weeks]
+
+    chart = [ForecastChartPoint(week=str(r.week_start), actual=r.actual_qty) for r in past_rows[-8:]]
+
+    # 실선과 점선이 시각적으로 이어지도록, 마지막 실제값 지점에 predicted도 같이 채움
+    if chart and future_rows:
+        chart[-1].predicted = chart[-1].actual
+
+    chart += [ForecastChartPoint(week=str(r.week_start), predicted=r.predicted_qty) for r in future_rows]
+
+    expected_sales = round(sum(r.predicted_qty for r in future_rows))
+    ending_inventory = max(0, current_available + incoming - expected_sales)
+
+    po_rows = db.query(PurchaseOrder).filter(PurchaseOrder.sku_id.in_(sku_ids)).all()
+    lead_times = [r.lead_time for r in po_rows if r.lead_time]
+    avg_lead_time_days = sum(lead_times) / len(lead_times) if lead_times else 14
+    avg_lead_time_weeks = avg_lead_time_days / 7
+    moq = max((r.moq for r in po_rows if r.moq), default=0)
+
+    # safety_stock은 원본 데이터에 없어서, 최근 4주 평균판매량 × 2주로 근사
+    recent_avg_weekly = (
+        sum(r.actual_qty for r in past_rows[-4:]) / len(past_rows[-4:])
+        if past_rows else 0
+    )
+    safety_target = recent_avg_weekly * 2
+
+    weekly_avg_sales = expected_sales / weeks if weeks else 0
+    leadtime_demand = weekly_avg_sales * avg_lead_time_weeks
+    raw_order_qty = max(0, (safety_target - current_available) + leadtime_demand)
+    recommended_order = int(max(raw_order_qty, moq)) if raw_order_qty > 0 else 0
+
+    order_date = None
+    if ending_inventory <= 0 and weekly_avg_sales > 0:
+        weeks_to_stockout = current_available / weekly_avg_sales
+        stockout_date = REFERENCE_DATE + timedelta(weeks=weeks_to_stockout)
+        order_date = (stockout_date - timedelta(days=avg_lead_time_days)).isoformat()
+
+    wos = (current_available / weekly_avg_sales) if weekly_avg_sales else 0
+    excess_qty = max(0, round(current_available - weekly_avg_sales * 8)) if wos > 8 else 0
+
+    has_forecast_data = len(future_rows) > 0
+
+    return ForecastResponse(
+        product_id=product_id,
+        has_forecast_data=has_forecast_data,
+        expected_sales=expected_sales,
+        ending_inventory=ending_inventory,
+        recommended_order=recommended_order,
+        order_date=order_date,
+        current_available=current_available,
+        incoming=incoming,
+        excess_qty=excess_qty,
+        chart=chart,
+    )
+
+
+@router.get("/filter-options", response_model=FilterOptionsResponse)
+def get_filter_options(
+    category_large: Optional[str] = Query(None),
+    category_middle: Optional[str] = Query(None),
+    db: Session = Depends(get_db)
+):
+    # 대분류 목록 (전체 고정 — 항상 모든 대분류를 보여줌)
+    large_options = [r[0] for r in db.query(ProductSku.category_large).distinct().all()]
+
+    # 중분류 목록 (대분류 선택 시 그 안에서만 필터링)
+    middle_query = db.query(ProductSku.category_middle).distinct()
+    if category_large:
+        middle_query = middle_query.filter(ProductSku.category_large == category_large)
+    middle_options = [r[0] for r in middle_query.all()]
+
+    # 상품 목록 (product_id + product_name, 대/중분류로 필터링, 색상·사이즈 무관하게 중복 제거)
+    product_query = db.query(ProductSku.product_id, ProductSku.product_name).distinct()
+    if category_large:
+        product_query = product_query.filter(ProductSku.category_large == category_large)
+    if category_middle:
+        product_query = product_query.filter(ProductSku.category_middle == category_middle)
+
+    products = [
+        ProductOption(product_id=r[0], product_name=r[1]) for r in product_query.all()
+    ]
+
+    return FilterOptionsResponse(
+        category_large=large_options,
+        category_middle=middle_options,
+        products=products,
+    )
