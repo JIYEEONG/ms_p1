@@ -243,7 +243,7 @@ export default function Forecast() {
             {[
               { label: '현재 가용', value: forecast?.current_available ?? 0, color: 'bg-[#3F4145]' },
               { label: '입고 예정', value: forecast?.incoming ?? 0, color: 'bg-[#5B6068]' },
-              { label: '예상 판매', value: -(forecast?.expected_sales ?? 0), display: `-${forecast?.expected_sales ?? 0}`, color: 'bg-[#8A8D96]' },
+              { label: '예상 판매', value: -(forecast?.expected_sales ?? 0), display: `${forecast?.expected_sales ?? 0}`, color: 'bg-[#8A8D96]' },
               { label: '기말 재고', value: forecast?.ending_inventory ?? 0, color: 'bg-[#3F4145]' },
             ].map((bar) => {
               const maxRef = Math.max(
