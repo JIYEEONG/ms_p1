@@ -62,3 +62,47 @@ export async function getForecast(
   if (!res.ok) throw new Error("예측 데이터 조회 실패");
   return res.json();
 }
+
+// --- HUB별 재고 탭 ---
+export interface HubCardData {
+  hub_id: string;
+  hub_name: string;
+  available: number;
+  reserved: number;
+  in_transit: number;
+  incoming: number;
+  wos: number;
+  speed_per_day: number;
+}
+
+export interface HubInventoryData {
+  hubs: HubCardData[];
+}
+
+export async function getHubInventory(): Promise<HubInventoryData> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/dashboard/hub-inventory`);
+  if (!res.ok) throw new Error("HUB별 재고 조회 실패");
+  return res.json();
+}
+
+// --- HUB 재고 균형 매트릭스 ---
+export interface ProductHubCell {
+  hub_id: string;
+  available: number;
+  wos: number;
+}
+
+export interface ProductHubRow {
+  product_name: string;
+  cells: ProductHubCell[];
+}
+
+export interface HubMatrixData {
+  rows: ProductHubRow[];
+}
+
+export async function getHubInventoryMatrix(topN: number = 4): Promise<HubMatrixData> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/dashboard/hub-inventory-matrix?top_n=${topN}`);
+  if (!res.ok) throw new Error("HUB 재고 매트릭스 조회 실패");
+  return res.json();
+}

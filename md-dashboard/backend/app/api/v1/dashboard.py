@@ -27,7 +27,12 @@ from app.schemas.dashboard import (
     ForecastChartPoint,
     FilterOptionsResponse,
     ProductOption,
-    CategorySalesResponse
+    CategorySalesResponse,
+    HubCardData, #HUBS 탭에 사용
+    HubInventoryResponse, #HUBS 탭에 사용
+    ProductHubCell, #HUBS 탭에 사용
+    ProductHubRow, #HUBS 탭에 사용
+    HubMatrixResponse, #HUBS 탭에 사용
 )
 
 router = APIRouter()
@@ -249,3 +254,151 @@ def get_category_sales(
         )
         for r in results
     ]
+
+@router.get("/hub-inventory", response_model=HubInventoryResponse)
+def get_hub_inventory(db: Session = Depends(get_db)):
+    """
+    HUB별 재고 관리 탭: dbo.INVENTORY(원본) 기준, REFERENCE_DATE 스냅샷 사용
+    """
+    # 1. 재고: REFERENCE_DATE 스냅샷의 전체 행 조회
+    inv_rows = (
+        db.query(InventoryRaw)
+        .filter(InventoryRaw.snapshot_date == REFERENCE_DATE)
+        .all()
+    )
+
+    # 2. hub_id 별로 그룹핑
+    hub_map: dict[str, dict] = {}
+    for r in inv_rows:
+        h = hub_map.setdefault(r.hub_id, {
+            "hub_id": r.hub_id,
+            "hub_name": r.hub_name,
+            "available": 0,
+            "reserved": 0,
+            "in_transit": 0,
+        })
+        h["available"] += r.available_qty or 0
+        h["reserved"] += r.reserved_qty or 0
+        h["in_transit"] += r.in_transit_qty or 0
+
+    # 3. 입고 예정: PURCHASE_ORDERS에서 hub_id별 ordered_qty 합계
+    #    (아직 도착 안 한 발주만 — actual_arrival_date IS NULL)
+    po_rows = (
+        db.query(PurchaseOrder.hub_id, func.sum(PurchaseOrder.ordered_qty))
+        .filter(PurchaseOrder.actual_arrival_date.is_(None))
+        .group_by(PurchaseOrder.hub_id)
+        .all()
+    )
+    incoming_map = {hub_id: qty or 0 for hub_id, qty in po_rows}
+
+    # 4. 소진 속도: 최근 28일 hub_id별 order_qty 합계 ÷ 28
+    period_start = REFERENCE_DATE - timedelta(days=28)
+    sales_rows = (
+        db.query(Order.hub_id, func.sum(Order.order_qty))
+        .filter(Order.order_datetime >= period_start)
+        .filter(Order.order_datetime <= REFERENCE_DATE)
+        .group_by(Order.hub_id)
+        .all()
+    )
+    speed_map = {hub_id: (qty or 0) / 28 for hub_id, qty in sales_rows}
+
+    # 5. 응답 조립 + WOS 계산 (예측 탭과 동일 공식: 가용재고 ÷ 주당 평균판매량)
+    result = []
+    for hub_id, h in hub_map.items():
+        speed = speed_map.get(hub_id, 0)
+        weekly_speed = speed * 7
+        wos = round(h["available"] / weekly_speed, 1) if weekly_speed else 0.0
+
+        result.append(HubCardData(
+            hub_id=h["hub_id"],
+            hub_name=h["hub_name"],
+            available=h["available"],
+            reserved=h["reserved"],
+            in_transit=h["in_transit"],
+            incoming=incoming_map.get(hub_id, 0),
+            wos=wos,
+            speed_per_day=round(speed, 1),
+        ))
+
+    result.sort(key=lambda x: x.hub_id)
+    return HubInventoryResponse(hubs=result)
+
+# 26.08.07 HUB 재고 균형 매트릭스: 고정 4개 상품 x HUB별 가용재고/WOS API (dbo.INVENTORY 원본 연동)
+@router.get("/hub-inventory-matrix", response_model=HubMatrixResponse)
+def get_hub_inventory_matrix(
+    top_n: int = Query(4, ge=1, le=20, description="HUB간 WOS 차이 큰 순 상위 N개 상품"),
+    db: Session = Depends(get_db)
+):
+    """
+    HUB 재고 균형 매트릭스: HUB간 WOS 차이가 큰 상위 N개 상품 자동 선정
+    (UI의 '[WOS 차이 큰 순]' 라벨에 맞춰 동적 선정 — 고정 상품 리스트 아님)
+    """
+    hub_ids = [r[0] for r in db.query(InventoryRaw.hub_id).distinct().all()]
+
+    # sku_id -> (product_id, product_name) 매핑
+    sku_map = {r.sku_id: (r.product_id, r.product_name) for r in db.query(ProductSku).all()}
+
+    # 1. 재고: REFERENCE_DATE 스냅샷 전체, sku_id+hub_id 별 available_qty
+    inv_rows = (
+        db.query(InventoryRaw.sku_id, InventoryRaw.hub_id, InventoryRaw.available_qty)
+        .filter(InventoryRaw.snapshot_date == REFERENCE_DATE)
+        .all()
+    )
+
+    # 2. 판매량: 최근 28일, sku_id+hub_id 별 order_qty 합계
+    period_start = REFERENCE_DATE - timedelta(days=28)
+    sales_rows = (
+        db.query(Order.sku_id, Order.hub_id, func.sum(Order.order_qty))
+        .filter(Order.order_datetime >= period_start)
+        .filter(Order.order_datetime <= REFERENCE_DATE)
+        .group_by(Order.sku_id, Order.hub_id)
+        .all()
+    )
+    sales_map: dict[tuple, int] = {}
+    for sku_id, hub_id, qty in sales_rows:
+        sales_map[(sku_id, hub_id)] = qty or 0
+
+    # 3. sku 단위 데이터를 product_id 단위로 합산 (hub별)
+    product_hub_available: dict[str, dict[str, int]] = {}
+    product_names: dict[str, str] = {}
+
+    for sku_id, hub_id, available_qty in inv_rows:
+        mapping = sku_map.get(sku_id)
+        if not mapping:
+            continue
+        product_id, product_name = mapping
+        product_names[product_id] = product_name
+        product_hub_available.setdefault(product_id, {}).setdefault(hub_id, 0)
+        product_hub_available[product_id][hub_id] += available_qty or 0
+
+    product_hub_sales: dict[str, dict[str, int]] = {}
+    for (sku_id, hub_id), qty in sales_map.items():
+        mapping = sku_map.get(sku_id)
+        if not mapping:
+            continue
+        product_id, _ = mapping
+        product_hub_sales.setdefault(product_id, {}).setdefault(hub_id, 0)
+        product_hub_sales[product_id][hub_id] += qty
+
+    # 4. product별 hub별 WOS 계산 + HUB간 WOS 차이(diff) 산출
+    candidates = []
+    for product_id, hub_avail in product_hub_available.items():
+        cells = []
+        wos_list = []
+        for hub_id in hub_ids:
+            available = hub_avail.get(hub_id, 0)
+            sales_qty = product_hub_sales.get(product_id, {}).get(hub_id, 0)
+            weekly_speed = (sales_qty / 28) * 7
+            wos = round(available / weekly_speed, 1) if weekly_speed else 0.0
+            wos_list.append(wos)
+            cells.append(ProductHubCell(hub_id=hub_id, available=available, wos=wos))
+
+        diff = max(wos_list) - min(wos_list) if wos_list else 0
+        candidates.append((diff, product_names.get(product_id, product_id), cells))
+
+    # 5. WOS 차이 큰 순 정렬 → 상위 N개만 선정
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    top = candidates[:top_n]
+
+    rows = [ProductHubRow(product_name=name, cells=cells) for _, name, cells in top]
+    return HubMatrixResponse(rows=rows)

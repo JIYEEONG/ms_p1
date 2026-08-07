@@ -84,3 +84,33 @@ class CategorySalesResponse(BaseModel):
     name: str
     value: float
     percentage: float
+
+# --- HUB별 재고 탭 ---
+class HubCardData(BaseModel):
+    hub_id: str          # HUB 고유 ID (예: HUB01)
+    hub_name: str        # HUB 이름 (예: 수도권 통합 허브)
+    available: int       # 가용재고 (EA)
+    reserved: int        # 예약 수량 (EA)
+    in_transit: int      # 이동 중 수량 (EA)
+    incoming: int        # 입고 예정 수량 (미도착 발주 합계, EA)
+    wos: float           # 재고소진 주수 = 가용재고 ÷ 주당 평균판매량
+    speed_per_day: float # 일 평균 소진 속도 (최근 28일 판매량 ÷ 28)
+
+
+class HubInventoryResponse(BaseModel):
+    hubs: List[HubCardData]
+
+# --- HUB 재고 균형 매트릭스 (상품 x HUB 가용재고/WOS) ---
+class ProductHubCell(BaseModel):
+    hub_id: str      # HUB 고유 ID
+    available: int   # 해당 상품의 해당 HUB 가용재고 (EA)
+    wos: float        # 해당 상품의 해당 HUB WOS
+
+
+class ProductHubRow(BaseModel):
+    product_name: str          # 상품명 (예: 니트가디건)
+    cells: List[ProductHubCell]  # HUB별 가용재고/WOS
+
+
+class HubMatrixResponse(BaseModel):
+    rows: List[ProductHubRow]

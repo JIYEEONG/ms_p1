@@ -13,3 +13,4 @@ class Order(Base):
     order_qty = Column(Integer, nullable=False)
     selling_price = Column(Float, nullable=False)
     total_sales = Column(Float, nullable=False)
+    hub_id = Column(String(50), nullable=True)  # HUB별 재고 탭에서 사용 (소진속도 계산용)
