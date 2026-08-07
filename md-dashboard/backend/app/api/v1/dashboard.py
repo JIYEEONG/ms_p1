@@ -39,6 +39,8 @@ from app.schemas.dashboard import (
     ProductInventoryListResponse, #상품별 재고 탭에 사용
     SkuOption, #상품별 재고 탭에 사용
     ProductFilterOptionsResponse, #상품별 재고 탭에 사용
+    TransferRecommendation, #HUBS 탭 이동 권장에 사용
+    TransferRecommendationResponse, #HUBS 탭 이동 권장에 사용
 )
 
 router = APIRouter()
@@ -508,6 +510,16 @@ def get_product_inventory(
     )
     sales_map = {sid: qty or 0 for sid, qty in sales_rows}
 
+    # 마지막 판매일: sku_id별 최신 order_datetime (전체 기간 대상, 90일 제한 없음)
+    last_sale_rows = (
+        db.query(Order.sku_id, func.max(Order.order_datetime))
+        .filter(Order.sku_id.in_(sku_ids))
+        .filter(Order.order_datetime <= REFERENCE_DATE)
+        .group_by(Order.sku_id)
+        .all()
+    )
+    last_sale_map = {sid: dt for sid, dt in last_sale_rows}
+
     # 3. 리드타임/MOQ/입고예정: PURCHASE_ORDERS 전체 행 (sku_id별로 파이썬에서 집계)
     po_rows = db.query(PurchaseOrder).filter(PurchaseOrder.sku_id.in_(sku_ids)).all()
     po_map: dict[str, list] = {}
@@ -552,11 +564,19 @@ def get_product_inventory(
         claim_qty = claim_map.get(sku.sku_id, 0)
         claim_rate = round((claim_qty / sales_90d) * 100, 1) if sales_90d > 0 else 0.0
 
+        # 무판매 일수: 마지막 판매일로부터 REFERENCE_DATE까지 며칠 지났는지
+        last_sale_dt = last_sale_map.get(sku.sku_id)
+        if last_sale_dt:
+            days_no_sale = (REFERENCE_DATE - last_sale_dt.date()).days
+        else:
+            days_no_sale = 9999  # 판매 이력 자체가 없으면 무판매로 간주
+
+        # 위험상태 판정 (공식 기준: 과잉재고=WOS 12주 이상, 장기재고=무판매 60일 이상)
         if available < safety_stock:
             status = "품절 임박"
-        elif wos > 12:
+        elif wos >= 12:
             status = "과잉재고"
-        elif wos > 8:
+        elif days_no_sale >= 60:
             status = "장기재고"
         else:
             status = "정상"
@@ -587,3 +607,121 @@ def get_product_inventory(
         ))
 
     return ProductInventoryListResponse(products=results)
+
+@router.get("/hub-transfer-recommendation", response_model=TransferRecommendationResponse)
+def get_hub_transfer_recommendation(
+    top_n: int = Query(20, ge=1, le=38, description="WOS 차이 큰 순 상위 N개 상품 (후보 풀, 결과는 이보다 적을 수 있음)"),
+    result_limit: int = Query(4, ge=1, le=20, description="최종 화면에 보여줄 이동 추천 개수"),
+    db: Session = Depends(get_db)
+):
+    """
+    HUB 간 권장 이동: 매트릭스와 동일한 방식으로 WOS 차이 큰 상위 N개 상품 선정,
+    과잉(WOS 높은) HUB → 부족(WOS 낮은) HUB로 이동 수량 자동 계산
+    상태는 실제 승인 워크플로우가 없어 항상 "이동" 고정 (진행상태 관리 기능은 추후 구현 예정)
+    """
+    hub_ids = [r[0] for r in db.query(InventoryRaw.hub_id).distinct().all()]
+    hub_names = {r.hub_id: r.hub_name for r in db.query(InventoryRaw).filter(InventoryRaw.snapshot_date == REFERENCE_DATE).all()}
+
+    sku_map = {r.sku_id: (r.product_id, r.product_name) for r in db.query(ProductSku).all()}
+
+    inv_rows = (
+        db.query(InventoryRaw.sku_id, InventoryRaw.hub_id, InventoryRaw.available_qty)
+        .filter(InventoryRaw.snapshot_date == REFERENCE_DATE)
+        .all()
+    )
+
+    period_start = REFERENCE_DATE - timedelta(days=28)
+    sales_rows = (
+        db.query(Order.sku_id, Order.hub_id, func.sum(Order.order_qty))
+        .filter(Order.order_datetime >= period_start)
+        .filter(Order.order_datetime <= REFERENCE_DATE)
+        .group_by(Order.sku_id, Order.hub_id)
+        .all()
+    )
+    sales_map: dict[tuple, int] = {}
+    for sku_id, hub_id, qty in sales_rows:
+        sales_map[(sku_id, hub_id)] = qty or 0
+
+    product_hub_available: dict[str, dict[str, int]] = {}
+    product_names: dict[str, str] = {}
+    for sku_id, hub_id, available_qty in inv_rows:
+        mapping = sku_map.get(sku_id)
+        if not mapping:
+            continue
+        product_id, product_name = mapping
+        product_names[product_id] = product_name
+        product_hub_available.setdefault(product_id, {}).setdefault(hub_id, 0)
+        product_hub_available[product_id][hub_id] += available_qty or 0
+
+    product_hub_sales: dict[str, dict[str, int]] = {}
+    for (sku_id, hub_id), qty in sales_map.items():
+        mapping = sku_map.get(sku_id)
+        if not mapping:
+            continue
+        product_id, _ = mapping
+        product_hub_sales.setdefault(product_id, {}).setdefault(hub_id, 0)
+        product_hub_sales[product_id][hub_id] += qty
+
+    candidates = []
+    for product_id, hub_avail in product_hub_available.items():
+        hub_wos = {}
+        hub_speed = {}
+        for hub_id in hub_ids:
+            available = hub_avail.get(hub_id, 0)
+            sales_qty = product_hub_sales.get(product_id, {}).get(hub_id, 0)
+            weekly_speed = (sales_qty / 28) * 7
+            wos = round(available / weekly_speed, 1) if weekly_speed else 0.0
+            hub_wos[hub_id] = wos
+            hub_speed[hub_id] = weekly_speed
+
+        wos_values = list(hub_wos.values())
+        diff = max(wos_values) - min(wos_values) if wos_values else 0
+        candidates.append((diff, product_id, hub_avail, hub_wos, hub_speed))
+
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    top = candidates[:top_n]
+
+    transfers = []
+    for diff, product_id, hub_avail, hub_wos, hub_speed in top:
+        from_hub = max(hub_wos, key=hub_wos.get)  # WOS 가장 높음 = 과잉
+
+        # 도착지 후보: 판매속도가 0(최근 28일 무판매)인 HUB는 제외
+        # + WOS 8주 미만(진짜 부족한 수준)인 HUB만 후보로 인정
+        to_candidates = {
+            h: w for h, w in hub_wos.items()
+            if hub_speed.get(h, 0) > 0 and w < 8
+        }
+        if not to_candidates:
+            continue  # 진짜로 부족한 HUB가 없으면 이 상품은 이동 추천 스킵
+        to_hub = min(to_candidates, key=to_candidates.get)  # 후보 중 WOS 가장 낮음 = 가장 부족
+
+        if from_hub == to_hub:
+            continue
+
+        avail_from = hub_avail.get(from_hub, 0)
+        avail_to = hub_avail.get(to_hub, 0)
+
+        # 권장 수량: 두 HUB 가용재고 차이의 절반 (균형점에 가깝게)
+        qty = max(0, round((avail_from - avail_to) / 2))
+        if qty <= 0:
+            continue
+
+        speed_from = hub_speed.get(from_hub, 0)
+        speed_to = hub_speed.get(to_hub, 0)
+
+        after_from = round((avail_from - qty) / speed_from, 1) if speed_from else 0.0
+        after_to = round((avail_to + qty) / speed_to, 1) if speed_to else 0.0
+
+        transfers.append(TransferRecommendation(
+            product_name=product_names.get(product_id, product_id),
+            from_hub=hub_names.get(from_hub, from_hub),
+            to_hub=hub_names.get(to_hub, to_hub),
+            qty=qty,
+            before_from=hub_wos.get(from_hub, 0.0),
+            after_from=after_from,
+            before_to=hub_wos.get(to_hub, 0.0),
+            after_to=after_to,
+            status="이동",
+        ))
+
+    return TransferRecommendationResponse(transfers=transfers[:result_limit])

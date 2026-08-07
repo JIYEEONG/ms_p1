@@ -3,27 +3,23 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { getHubInventory, HubCardData, getHubInventoryMatrix, ProductHubRow } from '@/services/dashboardApi';
-
-const DATA_TRANSFERS = [
-  { sku: "SKU0000", product: "니트가디건", from: "호남·충청권 허브", to: "수도권 통합 허브", qty: 18, before_from: 10.4, after_from: 7.9, before_to: 1.2, after_to: 4.1, status: "승인 대기" },
-  { sku: "SKU0055", product: "트렌치코트", from: "영남권 거점 허브", to: "호남·충청권 허브", qty: 12, before_from: 9.1, after_from: 6.8, before_to: 0.9, after_to: 3.7, status: "요청 생성" },
-  { sku: "SKU0188", product: "캐시미어코트", from: "수도권 통합 허브", to: "영남권 거점 허브", qty: 6, before_from: 18.0, after_from: 12.0, before_to: 2.8, after_to: 6.0, status: "출고 완료" }
-];
+import { getHubInventory, HubCardData, getHubInventoryMatrix, ProductHubRow, getHubTransferRecommendation, TransferRecommendation } from '@/services/dashboardApi';
 
 export default function HubInventory() {
   const [selectedHub, setSelectedHub] = useState(0);
   const [hubs, setHubs] = useState<HubCardData[]>([]);
   const [matrixRows, setMatrixRows] = useState<ProductHubRow[]>([]);
+  const [transfers, setTransfers] = useState<TransferRecommendation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     setLoading(true);
-    Promise.all([getHubInventory(), getHubInventoryMatrix()])
-      .then(([hubData, matrixData]) => {
+    Promise.all([getHubInventory(), getHubInventoryMatrix(), getHubTransferRecommendation()])
+      .then(([hubData, matrixData, transferData]) => {
         setHubs(hubData.hubs);
         setMatrixRows(matrixData.rows);
+        setTransfers(transferData.transfers);
       })
       .catch(() => setError('HUB별 재고 데이터를 불러오지 못했습니다.'))
       .finally(() => setLoading(false));
@@ -185,11 +181,11 @@ export default function HubInventory() {
               </tr>
             </thead>
             <tbody className="divide-y divide-[#65676E]/10 text-xs text-[#3F4145]">
-              {DATA_TRANSFERS.map((t, idx) => (
+              {transfers.map((t, idx) => (
                 <tr key={idx} className="hover:bg-white/30">
-                  <td className="p-3 font-semibold">{t.product}</td>
-                  <td className="p-3">{t.from}</td>
-                  <td className="p-3">{t.to}</td>
+                  <td className="p-3 font-semibold">{t.product_name}</td>
+                  <td className="p-3">{t.from_hub}</td>
+                  <td className="p-3">{t.to_hub}</td>
                   <td className="p-3 font-bold">{t.qty} EA</td>
                   <td className="p-3">{t.before_from} → {t.after_from}</td>
                   <td className="p-3">{t.before_to} → {t.after_to}</td>

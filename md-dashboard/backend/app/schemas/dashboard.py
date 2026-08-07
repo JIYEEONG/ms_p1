@@ -154,3 +154,19 @@ class ProductFilterOptionsResponse(BaseModel):
     category_middle: List[str]
     products: List[ProductOption]     # 이미 있는 ProductOption 재사용 (product_id, product_name)
     skus: List[SkuOption]
+
+# --- HUB 간 권장 이동 및 진행 상태 ---
+class TransferRecommendation(BaseModel):
+    product_name: str
+    from_hub: str        # 출발 HUB명 (WOS 높은 = 과잉)
+    to_hub: str           # 도착 HUB명 (WOS 낮은 = 부족)
+    qty: int               # 권장 이동 수량
+    before_from: float    # 출발 HUB 이동 전 WOS
+    after_from: float     # 출발 HUB 이동 후 예상 WOS
+    before_to: float      # 도착 HUB 이동 전 WOS
+    after_to: float       # 도착 HUB 이동 후 예상 WOS
+    status: str = "이동"  # 실제 승인 워크플로우 아님, 고정 텍스트
+
+
+class TransferRecommendationResponse(BaseModel):
+    transfers: List[TransferRecommendation]

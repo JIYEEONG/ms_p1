@@ -184,3 +184,30 @@ export async function getProductInventory(params?: {
   if (!res.ok) throw new Error("상품별 재고 조회 실패");
   return res.json();
 }
+
+// --- HUB 간 권장 이동 및 진행 상태 ---
+export interface TransferRecommendation {
+  product_name: string;
+  from_hub: string;
+  to_hub: string;
+  qty: number;
+  before_from: number;
+  after_from: number;
+  before_to: number;
+  after_to: number;
+  status: string;
+}
+
+export interface TransferRecommendationData {
+  transfers: TransferRecommendation[];
+}
+
+export async function getHubTransferRecommendation(
+  resultLimit: number = 4
+): Promise<TransferRecommendationData> {
+  const res = await fetch(
+    `${API_BASE_URL}/api/v1/dashboard/hub-transfer-recommendation?result_limit=${resultLimit}`
+  );
+  if (!res.ok) throw new Error("HUB 이동 권장 조회 실패");
+  return res.json();
+}
