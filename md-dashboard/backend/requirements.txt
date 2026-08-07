@@ -7,3 +7,6 @@ pyodbc
 pydantic
 pydantic-settings
 python-dotenv
+azure-core
+azure-search-documents
+openai

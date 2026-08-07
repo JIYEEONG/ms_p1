@@ -27,6 +27,7 @@ from app.schemas.dashboard import (
     ForecastChartPoint,
     FilterOptionsResponse,
     ProductOption,
+    CategorySalesResponse
 )
 
 router = APIRouter()
@@ -215,3 +216,36 @@ def get_filter_options(
         category_middle=middle_options,
         products=products,
     )
+
+@router.get("/category-sales", response_model=List[CategorySalesResponse])
+def get_category_sales(
+    db: Session = Depends(get_db)
+):
+    """
+    Azure DB dbo.ORDERS × dbo.PRODUCT_SKU 연동: 카테고리(대분류)별 순매출 조회
+    """
+    query = (
+        db.query(
+            ProductSku.category_large.label("category"),
+            func.sum(Order.total_sales).label("sales")
+        )
+        .join(ProductSku, Order.sku_id == ProductSku.sku_id)
+        .group_by(ProductSku.category_large)
+        .order_by(func.sum(Order.total_sales).desc())
+    )
+
+    results = query.all()
+
+    if not results:
+        return []
+
+    max_sales = max(float(r.sales or 0) for r in results)
+
+    return [
+        CategorySalesResponse(
+            name=r.category,
+            value=float(r.sales or 0),
+            percentage=round((float(r.sales or 0) / max_sales) * 100, 1) if max_sales > 0 else 0,
+        )
+        for r in results
+    ]

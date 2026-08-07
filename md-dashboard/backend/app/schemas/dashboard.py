@@ -79,3 +79,8 @@ class FilterOptionsResponse(BaseModel):
     category_large: List[str]
     category_middle: List[str]
     products: List[ProductOption]
+
+class CategorySalesResponse(BaseModel):
+    name: str
+    value: float
+    percentage: float
