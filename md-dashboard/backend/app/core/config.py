@@ -30,9 +30,16 @@ class Settings(BaseSettings):
     DB_USER: str
     DB_PASSWORD: str
 
+    # Azure AI Search & OpenAI Settings (신규 추가)
+    AZURE_OPENAI_ENDPOINT: str
+    AZURE_OPENAI_KEY: str
+    AZURE_DEPLOYMENT_NAME: str
+    AZURE_AI_SEARCH_ENDPOINT: str
+    AZURE_AI_SEARCH_API_KEY: str
+
     @property
     def DATABASE_URL(self) -> str:
-        driver = "ODBC Driver 18 for SQL Server"
+        driver = "ODBC Driver 17 for SQL Server"
         
         params = quote_plus(
             f"DRIVER={{{driver}}};"
@@ -40,14 +47,15 @@ class Settings(BaseSettings):
             f"DATABASE={self.DB_NAME};"
             f"UID={self.DB_USER};"
             f"PWD={self.DB_PASSWORD};"
-            "Encrypt=yes;"
-            "TrustServerCertificate=no;"
-            "Connection Timeout=30;"
+            f"Encrypt=yes;"
+            f"TrustServerCertificate=no;"
+            f"Connection Timeout=30;"
         )
         return f"mssql+pyodbc:///?odbc_connect={params}"
 
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
+        extra = "ignore"  # 기타 정의되지 않은 .env 항목 무시
 
 settings = Settings()

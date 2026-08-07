@@ -55,10 +55,11 @@ export default function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
 }
   */
 
-// 햄버거 버튼 추가
+// 햄버거 버튼 추가, ai챗봇 추가
 'use client';
 
 import { DashboardView } from '@/types/dashboard';
+import AiReportChatWidget from '@/components/layout/AiReportChatWidget';
 
 interface SidebarProps {
   currentView: DashboardView;
@@ -86,7 +87,7 @@ export default function Sidebar({ currentView, onViewChange, isOpen, onToggle }:
   // 열려있을 때: 몽환적인 3D 카드 효과가 적용된 사이드바
   return (
     <aside className="w-72 shrink-0 transition-all duration-300 ease-in-out">
-      <div className="bg-white/70 backdrop-blur-md border border-white/90 rounded-[32px] p-6 shadow-[0_20px_35px_-10px_rgba(160,175,200,0.25),inset_0_1px_2px_0_rgba(255,255,255,0.8)] min-h-[calc(100vh-48px)] flex flex-col justify-between">
+      <div className="bg-white/70 backdrop-blur-md border border-white/90 rounded-[32px] p-6 shadow-[0_20px_35px_-10px_rgba(160,175,200,0.25),inset_0_1px_2px_0_rgba(255,255,255,0.8)] min-h-[calc(100vh-48px)] flex flex-col justify-between gap-4">
         <div>
           {/* 상단 로고 & X (닫기) 버튼 */}
           <div className="flex items-center justify-between mb-8 gap-2">
@@ -155,6 +156,11 @@ export default function Sidebar({ currentView, onViewChange, isOpen, onToggle }:
               예측
             </button>
           </nav>
+        </div>
+
+        {/* AI 리포트 생성기 위젯 (신규 추가 영역) */}
+        <div className="my-2 h-[300px] w-full">
+          <AiReportChatWidget />
         </div>
 
         {/* 좌측 하단 설명 문구 */}
