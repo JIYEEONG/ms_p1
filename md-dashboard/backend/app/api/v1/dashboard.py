@@ -465,7 +465,7 @@ def get_product_inventory(
 ):
     """
     상품별 재고 탭: SKU 단위 상세 재고/판매/위험상태 목록
-    (dbo.INVENTORY, dbo.ORDERS, dbo.CLAIMS, dbo.PURCHASE_ORDERS, dbo.PRODUCT_SKU 조합)
+    성능 최적화: SKU마다 개별 쿼리하지 않고, 필요한 데이터를 벌크로 가져와 dict 매핑 후 계산
     """
     Z_TABLE = {90: 1.28, 95: 1.65, 99: 2.33}
     z_value = Z_TABLE.get(service_level, 1.28)
@@ -480,64 +480,78 @@ def get_product_inventory(
     if sku_id:
         sku_query = sku_query.filter(ProductSku.sku_id == sku_id)
     sku_rows = sku_query.all()
+    sku_ids = [s.sku_id for s in sku_rows]
+
+    if not sku_ids:
+        return ProductInventoryListResponse(products=[])
 
     period_90_start = REFERENCE_DATE - timedelta(days=90)
 
+    # 1. 가용재고: sku_id별 합계 (REFERENCE_DATE 스냅샷)
+    inv_rows = (
+        db.query(InventoryRaw.sku_id, func.sum(InventoryRaw.available_qty))
+        .filter(InventoryRaw.sku_id.in_(sku_ids))
+        .filter(InventoryRaw.snapshot_date == REFERENCE_DATE)
+        .group_by(InventoryRaw.sku_id)
+        .all()
+    )
+    available_map = {sid: qty or 0 for sid, qty in inv_rows}
+
+    # 2. 최근 90일 판매량: sku_id별 합계
+    sales_rows = (
+        db.query(Order.sku_id, func.sum(Order.order_qty))
+        .filter(Order.sku_id.in_(sku_ids))
+        .filter(Order.order_datetime >= period_90_start)
+        .filter(Order.order_datetime <= REFERENCE_DATE)
+        .group_by(Order.sku_id)
+        .all()
+    )
+    sales_map = {sid: qty or 0 for sid, qty in sales_rows}
+
+    # 3. 리드타임/MOQ/입고예정: PURCHASE_ORDERS 전체 행 (sku_id별로 파이썬에서 집계)
+    po_rows = db.query(PurchaseOrder).filter(PurchaseOrder.sku_id.in_(sku_ids)).all()
+    po_map: dict[str, list] = {}
+    for r in po_rows:
+        po_map.setdefault(r.sku_id, []).append(r)
+
+    # 4. 클레임: ORDERS × CLAIMS 조인, 최근 90일, sku_id별 합계
+    claim_rows = (
+        db.query(Order.sku_id, func.sum(Claim.claim_qty))
+        .join(Claim, Claim.order_item_id == Order.order_item_id)
+        .filter(Order.sku_id.in_(sku_ids))
+        .filter(Order.order_datetime >= period_90_start)
+        .filter(Order.order_datetime <= REFERENCE_DATE)
+        .filter(Claim.claim_datetime >= period_90_start)
+        .filter(Claim.claim_datetime <= REFERENCE_DATE)
+        .group_by(Order.sku_id)
+        .all()
+    )
+    claim_map = {sid: qty or 0 for sid, qty in claim_rows}
+
+    # 5. sku별 계산 (DB 쿼리 없이 dict lookup만 사용)
     results = []
     for sku in sku_rows:
-        # 가용재고: REFERENCE_DATE 스냅샷, 전체 HUB 합산
-        available = (
-            db.query(func.sum(InventoryRaw.available_qty))
-            .filter(InventoryRaw.sku_id == sku.sku_id)
-            .filter(InventoryRaw.snapshot_date == REFERENCE_DATE)
-            .scalar()
-        ) or 0
-
-        # 최근 90일 판매량
-        sales_90d = (
-            db.query(func.sum(Order.order_qty))
-            .filter(Order.sku_id == sku.sku_id)
-            .filter(Order.order_datetime >= period_90_start)
-            .filter(Order.order_datetime <= REFERENCE_DATE)
-            .scalar()
-        ) or 0
+        available = available_map.get(sku.sku_id, 0)
+        sales_90d = sales_map.get(sku.sku_id, 0)
         daily_avg = sales_90d / 90
         weekly_avg = daily_avg * 7
 
-        # 리드타임/MOQ/입고예정: PURCHASE_ORDERS
-        po_rows = db.query(PurchaseOrder).filter(PurchaseOrder.sku_id == sku.sku_id).all()
-        lead_times = [r.lead_time for r in po_rows if r.lead_time]
+        po_list = po_map.get(sku.sku_id, [])
+        lead_times = [r.lead_time for r in po_list if r.lead_time]
         avg_lead_time = sum(lead_times) / len(lead_times) if lead_times else 14
-        moq = max((r.moq for r in po_rows if r.moq), default=0)
-        incoming = sum(
-            r.ordered_qty or 0 for r in po_rows if r.actual_arrival_date is None
-        )
+        moq = max((r.moq for r in po_list if r.moq), default=0)
+        incoming = sum(r.ordered_qty or 0 for r in po_list if r.actual_arrival_date is None)
 
-        # 안전재고: Z값 × 리드타임가중치 × 일평균판매량 × sqrt(리드타임)
         safety_stock = round(z_value * leadtime_factor * daily_avg * math.sqrt(avg_lead_time))
 
-        # 판매율: 90일판매량 ÷ (90일판매량 + 가용재고) × 100
         denom = sales_90d + available
         sell_through = round((sales_90d / denom) * 100, 1) if denom > 0 else 0.0
 
-        # WOS
         wos = round(available / weekly_avg, 1) if weekly_avg else 0.0
 
-        # 클레임율: CLAIMS.claim_qty 합계 ÷ 90일 판매량 × 100
-        order_item_ids = [
-            r[0] for r in
-            db.query(Order.order_item_id).filter(Order.sku_id == sku.sku_id).all()
-        ]
-        claim_qty = 0
-        if order_item_ids:
-            claim_qty = (
-                db.query(func.sum(Claim.claim_qty))
-                .filter(Claim.order_item_id.in_(order_item_ids))
-                .scalar()
-            ) or 0
+        claim_qty = claim_map.get(sku.sku_id, 0)
         claim_rate = round((claim_qty / sales_90d) * 100, 1) if sales_90d > 0 else 0.0
 
-        # 위험상태 판정
         if available < safety_stock:
             status = "품절 임박"
         elif wos > 12:

@@ -3,38 +3,72 @@
 
 'use client';
 
-import React, { useState } from 'react';
-
-const PRODUCTS = [
-  { sku: "SKU0000", product: "니트가디건", category: "아우터", season: "간절기", color: "블랙", size: "M", available: 0, safety: 24, sales90: 218, daily: 2.42, sell_through: 88.4, wos: 0, claim_rate: 4.1, status: "품절 임박", lead: 21, moq: 50, incoming: 50 },
-  { sku: "SKU0055", product: "트렌치코트", category: "아우터", season: "간절기", color: "베이지", size: "S", available: 0, safety: 18, sales90: 163, daily: 1.81, sell_through: 91.2, wos: 0, claim_rate: 3.2, status: "품절 임박", lead: 28, moq: 30, incoming: 30 },
-  { sku: "SKU0142", product: "와이드슬랙스", category: "팬츠", season: "사계절", color: "차콜", size: "L", available: 31, safety: 14, sales90: 32, daily: 0.36, sell_through: 54.7, wos: 24.1, claim_rate: 2.8, status: "장기재고", lead: 14, moq: 40, incoming: 0 },
-  { sku: "SKU0188", product: "캐시미어코트", category: "아우터", season: "겨울", color: "그레이", size: "M", available: 18, safety: 9, sales90: 21, daily: 0.23, sell_through: 42.1, wos: 19.6, claim_rate: 6.5, status: "과잉재고", lead: 35, moq: 20, incoming: 0 },
-  { sku: "SKU0225", product: "린넨숏팬츠", category: "팬츠", season: "여름", color: "화이트", size: "S", available: 22, safety: 8, sales90: 9, daily: 0.1, sell_through: 31.4, wos: 55.0, claim_rate: 1.4, status: "장기재고", lead: 18, moq: 30, incoming: 0 },
-  { sku: "SKU0314", product: "플리츠스커트", category: "스커트", season: "사계절", color: "네이비", size: "M", available: 27, safety: 10, sales90: 28, daily: 0.31, sell_through: 49.3, wos: 21.8, claim_rate: 2.1, status: "과잉재고", lead: 16, moq: 30, incoming: 0 }
-];
+import React, { useState, useEffect } from 'react';
+import {
+  getProductInventory, getProductFilterOptions,
+  ProductSkuRow, ProductFilterOptionsData,
+} from '@/services/dashboardApi';
 
 export default function ProductInventory() {
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('전체');
-  const [categoryFilter, setCategoryFilter] = useState('전체');
-  const [seasonFilter, setSeasonFilter] = useState('전체');
+  const [categoryLargeFilter, setCategoryLargeFilter] = useState('');
+  const [categoryMiddleFilter, setCategoryMiddleFilter] = useState('');
+  const [skuFilter, setSkuFilter] = useState('');
+
+  const [filterOptions, setFilterOptions] = useState<ProductFilterOptionsData | null>(null);
+  const [products, setProducts] = useState<ProductSkuRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // 안전재고 설정 모달 상태
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [serviceLevel, setServiceLevel] = useState('95');
   const [leadTimeFactor, setLeadTimeFactor] = useState('1.5');
 
-  const filtered = PRODUCTS.filter(p => {
-    const matchSearch = !search || (p.product + p.sku).toLowerCase().includes(search.toLowerCase());
-    const matchStatus = statusFilter === '전체' || p.status === statusFilter;
-    const matchCategory = categoryFilter === '전체' || p.category === categoryFilter;
-    const matchSeason = seasonFilter === '전체' || p.season === seasonFilter;
-    return matchSearch && matchStatus && matchCategory && matchSeason;
+  // 대/중분류 바뀔 때마다 필터 옵션(중분류·SKU 목록) 갱신
+  useEffect(() => {
+    getProductFilterOptions({
+      category_large: categoryLargeFilter || undefined,
+      category_middle: categoryMiddleFilter || undefined,
+    })
+      .then(setFilterOptions)
+      .catch(() => setFilterOptions(null));
+  }, [categoryLargeFilter, categoryMiddleFilter]);
+
+  // 대분류 바뀌면 중분류·SKU 선택 초기화
+  const handleCategoryLargeChange = (value: string) => {
+    setCategoryLargeFilter(value);
+    setCategoryMiddleFilter('');
+    setSkuFilter('');
+  };
+
+  // 필터 또는 안전재고 산출 기준(서비스수준/가중치) 바뀔 때마다 상품 목록 재조회
+  useEffect(() => {
+    setLoading(true);
+    getProductInventory({
+      category_large: categoryLargeFilter || undefined,
+      category_middle: categoryMiddleFilter || undefined,
+      sku_id: skuFilter || undefined,
+      risk_status: statusFilter !== '전체' ? statusFilter : undefined,
+      service_level: Number(serviceLevel),
+      leadtime_factor: Number(leadTimeFactor),
+    })
+      .then((data) => {
+        setProducts(data.products);
+        setSelectedIdx(0);
+      })
+      .catch(() => setError('상품별 재고 데이터를 불러오지 못했습니다.'))
+      .finally(() => setLoading(false));
+  }, [categoryLargeFilter, categoryMiddleFilter, skuFilter, statusFilter, serviceLevel, leadTimeFactor]);
+
+  const filtered = products.filter(p => {
+    const term = search.toLowerCase();
+    return !term || (p.product_name + p.sku_id).toLowerCase().includes(term);
   });
 
-  const p = PRODUCTS[selectedIdx] || PRODUCTS[0];
+  const p = filtered[selectedIdx] || filtered[0];
 
   const getBadgeStyle = (status: string) => {
     if (status === '품절 임박') return 'bg-[#FCE8E6] text-[#A83232]';
@@ -64,8 +98,9 @@ export default function ProductInventory() {
       </div>
 
       {/* 필터 영역 */}
+      {/* 필터 영역 */}
       <div className="bg-white/40 backdrop-blur-md border border-white/60 p-5 rounded-[28px] shadow-sm">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <div>
             <label className="block text-[11px] font-medium text-[#8A8D96] mb-1.5">상품 검색</label>
             <input 
@@ -87,33 +122,48 @@ export default function ProductInventory() {
               <option>품절 임박</option>
               <option>과잉재고</option>
               <option>장기재고</option>
+              <option>정상</option>
             </select>
           </div>
           <div>
-            <label className="block text-[11px] font-medium text-[#8A8D96] mb-1.5">카테고리</label>
+            <label className="block text-[11px] font-medium text-[#8A8D96] mb-1.5">대분류</label>
             <select 
-              value={categoryFilter}
-              onChange={e => setCategoryFilter(e.target.value)}
+              value={categoryLargeFilter}
+              onChange={e => handleCategoryLargeChange(e.target.value)}
               className="w-full bg-white/70 border border-white/80 rounded-2xl px-4 py-2.5 text-xs text-[#3F4145] outline-none shadow-inner cursor-pointer"
             >
-              <option>전체</option>
-              <option>아우터</option>
-              <option>팬츠</option>
-              <option>스커트</option>
+              <option value="">전체</option>
+              {filterOptions?.category_large.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
             </select>
           </div>
           <div>
-            <label className="block text-[11px] font-medium text-[#8A8D96] mb-1.5">시즌</label>
+            <label className="block text-[11px] font-medium text-[#8A8D96] mb-1.5">중분류</label>
             <select 
-              value={seasonFilter}
-              onChange={e => setSeasonFilter(e.target.value)}
+              value={categoryMiddleFilter}
+              onChange={e => { setCategoryMiddleFilter(e.target.value); setSkuFilter(''); }}
               className="w-full bg-white/70 border border-white/80 rounded-2xl px-4 py-2.5 text-xs text-[#3F4145] outline-none shadow-inner cursor-pointer"
             >
-              <option>전체</option>
-              <option>간절기</option>
-              <option>사계절</option>
-              <option>여름</option>
-              <option>겨울</option>
+              <option value="">전체</option>
+              {filterOptions?.category_middle.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-[11px] font-medium text-[#8A8D96] mb-1.5">SKU</label>
+            <select 
+              value={skuFilter}
+              onChange={e => setSkuFilter(e.target.value)}
+              className="w-full bg-white/70 border border-white/80 rounded-2xl px-4 py-2.5 text-xs text-[#3F4145] outline-none shadow-inner cursor-pointer"
+            >
+              <option value="">전체</option>
+              {filterOptions?.skus.map((s) => (
+                <option key={s.sku_id} value={s.sku_id}>
+                  {s.sku_id} · {s.color_name} · {s.size_code}
+                </option>
+              ))}
             </select>
           </div>
         </div>
@@ -127,29 +177,34 @@ export default function ProductInventory() {
         </div>
 
         <div className="space-y-2 mt-3">
-          {filtered.map((item) => {
-            const realIndex = PRODUCTS.indexOf(item);
-            const isSelected = realIndex === selectedIdx;
+          {loading && (
+            <div className="text-center text-xs text-[#8A8D96] py-8">불러오는 중...</div>
+          )}
+          {!loading && error && (
+            <div className="text-center text-xs text-red-500 py-8">{error}</div>
+          )}
+          {!loading && !error && filtered.map((item, idx) => {
+            const isSelected = idx === selectedIdx;
             return (
               <div
-                key={item.sku}
-                onClick={() => setSelectedIdx(realIndex)}
+                key={item.sku_id}
+                onClick={() => setSelectedIdx(idx)}
                 className={`grid grid-cols-8 gap-4 items-center p-4 rounded-2xl cursor-pointer transition text-xs ${
                   isSelected ? 'bg-white/90 shadow-md border border-white' : 'bg-white/30 hover:bg-white/50 border border-transparent'
                 }`}
               >
                 <div className="col-span-2">
-                  <div className="font-bold text-[#3F4145] text-sm">{item.product}</div>
-                  <div className="text-[11px] text-[#8A8D96] mt-0.5">{item.sku} · {item.color} · {item.size}</div>
+                  <div className="font-bold text-[#3F4145] text-sm">{item.product_name}</div>
+                  <div className="text-[11px] text-[#8A8D96] mt-0.5">{item.sku_id} · {item.color_name} · {item.size_code}</div>
                 </div>
                 <div><span className="text-[10px] text-[#8A8D96] block mb-0.5">가용</span><strong className="text-sm font-semibold">{item.available}</strong> EA</div>
-                <div><span className="text-[10px] text-[#8A8D96] block mb-0.5">안전</span><strong className="text-sm font-semibold">{item.safety}</strong> EA</div>
+                <div><span className="text-[10px] text-[#8A8D96] block mb-0.5">안전</span><strong className="text-sm font-semibold">{item.safety_stock}</strong> EA</div>
                 <div><span className="text-[10px] text-[#8A8D96] block mb-0.5">WOS</span><strong className="text-sm font-semibold">{item.wos}</strong></div>
                 <div><span className="text-[10px] text-[#8A8D96] block mb-0.5">판매율</span><strong className="text-sm font-semibold">{item.sell_through}%</strong></div>
                 <div><span className="text-[10px] text-[#8A8D96] block mb-0.5">클레임</span><strong className="text-sm font-semibold">{item.claim_rate}%</strong></div>
                 <div>
-                  <span className={`inline-block px-3 py-1 rounded-full text-[11px] font-bold ${getBadgeStyle(item.status)}`}>
-                    {item.status}
+                  <span className={`inline-block px-3 py-1 rounded-full text-[11px] font-bold ${getBadgeStyle(item.risk_status)}`}>
+                    {item.risk_status}
                   </span>
                 </div>
               </div>
@@ -162,7 +217,7 @@ export default function ProductInventory() {
       {p && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <div className="bg-white/40 backdrop-blur-md border border-white/60 p-6 rounded-[28px] shadow-sm">
-            <h3 className="text-base font-bold text-[#3F4145]">{p.product} 상세</h3>
+            <h3 className="text-base font-bold text-[#3F4145]">{p.product_name} 상세</h3>
             <p className="text-[11px] text-[#8A8D96] mt-0.5 mb-4">현재고·안전재고·판매속도</p>
             <div className="grid grid-cols-4 gap-3 text-center">
               <div className="bg-white/50 p-3.5 rounded-2xl border border-white/60">
@@ -171,7 +226,7 @@ export default function ProductInventory() {
               </div>
               <div className="bg-white/50 p-3.5 rounded-2xl border border-white/60">
                 <span className="block text-[10px] text-[#8A8D96] mb-1">안전재고</span>
-                <span className="text-lg font-bold text-[#3F4145]">{p.safety}</span> <span className="text-xs text-[#8A8D96]">EA</span>
+                <span className="text-lg font-bold text-[#3F4145]">{p.safety_stock}</span> <span className="text-xs text-[#8A8D96]">EA</span>
               </div>
               <div className="bg-white/50 p-3.5 rounded-2xl border border-white/60">
                 <span className="block text-[10px] text-[#8A8D96] mb-1">WOS</span>
@@ -198,7 +253,7 @@ export default function ProductInventory() {
               </div>
               <div className="bg-white/50 p-3.5 rounded-2xl border border-white/60">
                 <span className="block text-[10px] text-[#8A8D96] mb-1">리드타임</span>
-                <span className="text-lg font-bold text-[#3F4145]">{p.lead}</span> <span className="text-xs text-[#8A8D96]">일</span>
+                <span className="text-lg font-bold text-[#3F4145]">{p.lead_time}</span> <span className="text-xs text-[#8A8D96]">일</span>
               </div>
               <div className="bg-white/50 p-3.5 rounded-2xl border border-white/60">
                 <span className="block text-[10px] text-[#8A8D96] mb-1">클레임률</span>
