@@ -114,3 +114,43 @@ class ProductHubRow(BaseModel):
 
 class HubMatrixResponse(BaseModel):
     rows: List[ProductHubRow]
+
+# --- 상품별 재고 탭 ---
+class ProductSkuRow(BaseModel):
+    sku_id: str
+    product_id: str
+    product_name: str
+    category_large: str
+    category_middle: str
+    season_type: str
+    color_name: str
+    size_code: str
+    available: int          # 가용재고
+    safety_stock: int       # 안전재고 (서비스수준/가중치 반영 계산값)
+    sales_90d: int           # 최근 90일 판매량
+    daily_avg: float         # 일평균 판매량
+    sell_through: float      # 판매율(%)
+    wos: float                # 재고소진 주수
+    claim_rate: float        # 클레임율(%)
+    risk_status: str         # 품절 임박 / 과잉재고 / 장기재고 / 정상
+    lead_time: int           # 평균 리드타임(일)
+    moq: int                  # 최소발주수량
+    incoming: int             # 입고 예정량 (미도착 발주)
+
+
+class ProductInventoryListResponse(BaseModel):
+    products: List[ProductSkuRow]
+
+
+# --- 필터 드롭다운용 (SKU까지 포함한 계단식) ---
+class SkuOption(BaseModel):
+    sku_id: str
+    color_name: Optional[str] = None
+    size_code: Optional[str] = None
+
+
+class ProductFilterOptionsResponse(BaseModel):
+    category_large: List[str]
+    category_middle: List[str]
+    products: List[ProductOption]     # 이미 있는 ProductOption 재사용 (product_id, product_name)
+    skus: List[SkuOption]

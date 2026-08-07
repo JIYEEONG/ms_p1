@@ -8,6 +8,7 @@
 # from app.schemas.dashboard import SalesTrendResponse
 
 from datetime import date, timedelta
+import math
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func, literal_column
@@ -20,6 +21,7 @@ from app.models.inventory import Inventory
 from app.models.inventory_raw import InventoryRaw
 from app.models.forecast import DemandForecastResult
 from app.models.purchase_order import PurchaseOrder
+from app.models.claims import Claim
 from app.schemas.dashboard import (
     SalesTrendResponse,
     ProductInventoryResponse,
@@ -33,6 +35,10 @@ from app.schemas.dashboard import (
     ProductHubCell, #HUBS 탭에 사용
     ProductHubRow, #HUBS 탭에 사용
     HubMatrixResponse, #HUBS 탭에 사용
+    ProductSkuRow, #상품별 재고 탭에 사용
+    ProductInventoryListResponse, #상품별 재고 탭에 사용
+    SkuOption, #상품별 재고 탭에 사용
+    ProductFilterOptionsResponse, #상품별 재고 탭에 사용
 )
 
 router = APIRouter()
@@ -402,3 +408,168 @@ def get_hub_inventory_matrix(
 
     rows = [ProductHubRow(product_name=name, cells=cells) for _, name, cells in top]
     return HubMatrixResponse(rows=rows)
+
+@router.get("/product-filter-options", response_model=ProductFilterOptionsResponse)
+def get_product_filter_options(
+    category_large: Optional[str] = Query(None),
+    category_middle: Optional[str] = Query(None),
+    product_id: Optional[str] = Query(None),
+    db: Session = Depends(get_db)
+):
+    """
+    상품별 재고 탭 필터 옵션: 대분류 → 중분류 → 상품(Product ID) → SKU 계단식
+    """
+    large_options = [r[0] for r in db.query(ProductSku.category_large).distinct().all()]
+
+    middle_query = db.query(ProductSku.category_middle).distinct()
+    if category_large:
+        middle_query = middle_query.filter(ProductSku.category_large == category_large)
+    middle_options = [r[0] for r in middle_query.all()]
+
+    product_query = db.query(ProductSku.product_id, ProductSku.product_name).distinct()
+    if category_large:
+        product_query = product_query.filter(ProductSku.category_large == category_large)
+    if category_middle:
+        product_query = product_query.filter(ProductSku.category_middle == category_middle)
+    products = [ProductOption(product_id=r[0], product_name=r[1]) for r in product_query.all()]
+
+    sku_query = db.query(ProductSku.sku_id, ProductSku.color_name, ProductSku.size_code)
+    if product_id:
+        sku_query = sku_query.filter(ProductSku.product_id == product_id)
+    elif category_large or category_middle:
+        # product_id 선택 전이면, 대/중분류만으로 SKU 후보를 좁혀서 보여줌
+        if category_large:
+            sku_query = sku_query.filter(ProductSku.category_large == category_large)
+        if category_middle:
+            sku_query = sku_query.filter(ProductSku.category_middle == category_middle)
+    skus = [SkuOption(sku_id=r[0], color_name=r[1], size_code=r[2]) for r in sku_query.all()]
+
+    return ProductFilterOptionsResponse(
+        category_large=large_options,
+        category_middle=middle_options,
+        products=products,
+        skus=skus,
+    )
+
+
+@router.get("/product-inventory", response_model=ProductInventoryListResponse)
+def get_product_inventory(
+    category_large: Optional[str] = Query(None),
+    category_middle: Optional[str] = Query(None),
+    product_id: Optional[str] = Query(None),
+    sku_id: Optional[str] = Query(None),
+    risk_status: Optional[str] = Query(None, description="품절 임박 / 과잉재고 / 장기재고 / 정상"),
+    service_level: int = Query(90, description="목표 서비스 수준(%): 90/95/99"),
+    leadtime_factor: float = Query(1.5, description="리드타임 변동 가중치"),
+    db: Session = Depends(get_db)
+):
+    """
+    상품별 재고 탭: SKU 단위 상세 재고/판매/위험상태 목록
+    (dbo.INVENTORY, dbo.ORDERS, dbo.CLAIMS, dbo.PURCHASE_ORDERS, dbo.PRODUCT_SKU 조합)
+    """
+    Z_TABLE = {90: 1.28, 95: 1.65, 99: 2.33}
+    z_value = Z_TABLE.get(service_level, 1.28)
+
+    sku_query = db.query(ProductSku)
+    if category_large:
+        sku_query = sku_query.filter(ProductSku.category_large == category_large)
+    if category_middle:
+        sku_query = sku_query.filter(ProductSku.category_middle == category_middle)
+    if product_id:
+        sku_query = sku_query.filter(ProductSku.product_id == product_id)
+    if sku_id:
+        sku_query = sku_query.filter(ProductSku.sku_id == sku_id)
+    sku_rows = sku_query.all()
+
+    period_90_start = REFERENCE_DATE - timedelta(days=90)
+
+    results = []
+    for sku in sku_rows:
+        # 가용재고: REFERENCE_DATE 스냅샷, 전체 HUB 합산
+        available = (
+            db.query(func.sum(InventoryRaw.available_qty))
+            .filter(InventoryRaw.sku_id == sku.sku_id)
+            .filter(InventoryRaw.snapshot_date == REFERENCE_DATE)
+            .scalar()
+        ) or 0
+
+        # 최근 90일 판매량
+        sales_90d = (
+            db.query(func.sum(Order.order_qty))
+            .filter(Order.sku_id == sku.sku_id)
+            .filter(Order.order_datetime >= period_90_start)
+            .filter(Order.order_datetime <= REFERENCE_DATE)
+            .scalar()
+        ) or 0
+        daily_avg = sales_90d / 90
+        weekly_avg = daily_avg * 7
+
+        # 리드타임/MOQ/입고예정: PURCHASE_ORDERS
+        po_rows = db.query(PurchaseOrder).filter(PurchaseOrder.sku_id == sku.sku_id).all()
+        lead_times = [r.lead_time for r in po_rows if r.lead_time]
+        avg_lead_time = sum(lead_times) / len(lead_times) if lead_times else 14
+        moq = max((r.moq for r in po_rows if r.moq), default=0)
+        incoming = sum(
+            r.ordered_qty or 0 for r in po_rows if r.actual_arrival_date is None
+        )
+
+        # 안전재고: Z값 × 리드타임가중치 × 일평균판매량 × sqrt(리드타임)
+        safety_stock = round(z_value * leadtime_factor * daily_avg * math.sqrt(avg_lead_time))
+
+        # 판매율: 90일판매량 ÷ (90일판매량 + 가용재고) × 100
+        denom = sales_90d + available
+        sell_through = round((sales_90d / denom) * 100, 1) if denom > 0 else 0.0
+
+        # WOS
+        wos = round(available / weekly_avg, 1) if weekly_avg else 0.0
+
+        # 클레임율: CLAIMS.claim_qty 합계 ÷ 90일 판매량 × 100
+        order_item_ids = [
+            r[0] for r in
+            db.query(Order.order_item_id).filter(Order.sku_id == sku.sku_id).all()
+        ]
+        claim_qty = 0
+        if order_item_ids:
+            claim_qty = (
+                db.query(func.sum(Claim.claim_qty))
+                .filter(Claim.order_item_id.in_(order_item_ids))
+                .scalar()
+            ) or 0
+        claim_rate = round((claim_qty / sales_90d) * 100, 1) if sales_90d > 0 else 0.0
+
+        # 위험상태 판정
+        if available < safety_stock:
+            status = "품절 임박"
+        elif wos > 12:
+            status = "과잉재고"
+        elif wos > 8:
+            status = "장기재고"
+        else:
+            status = "정상"
+
+        if risk_status and risk_status not in ["전체", "ALL"] and status != risk_status:
+            continue
+
+        results.append(ProductSkuRow(
+            sku_id=sku.sku_id,
+            product_id=sku.product_id,
+            product_name=sku.product_name,
+            category_large=sku.category_large or "",
+            category_middle=sku.category_middle or "",
+            season_type=sku.season_type or "",
+            color_name=sku.color_name or "",
+            size_code=sku.size_code or "",
+            available=available,
+            safety_stock=safety_stock,
+            sales_90d=sales_90d,
+            daily_avg=round(daily_avg, 2),
+            sell_through=sell_through,
+            wos=wos,
+            claim_rate=claim_rate,
+            risk_status=status,
+            lead_time=round(avg_lead_time),
+            moq=moq,
+            incoming=incoming,
+        ))
+
+    return ProductInventoryListResponse(products=results)
