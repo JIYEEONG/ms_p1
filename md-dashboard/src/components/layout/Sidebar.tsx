@@ -123,7 +123,7 @@ export default function Sidebar({ currentView, onViewChange, isOpen, onToggle }:
                   : 'text-[#8A8D96] hover:bg-white/40 hover:text-[#3F4145]'
               }`}
             >
-              현황 파악
+              매출 현황
             </button>
             <button
               onClick={() => onViewChange('hub')}

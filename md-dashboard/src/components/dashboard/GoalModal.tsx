@@ -1,51 +1,87 @@
-// 26.08.05 UI 변경에 따른 파일 추가 목표 매출액 수정 모달
-
 'use client';
 
 import React, { useState } from 'react';
 
+export type GoalUnit = 'day' | 'week' | 'month' | 'year';
+
+export interface GoalSettings {
+  day: number;
+  week: number;
+  month: number;
+  year: number;
+}
+
+const goalUnits: Array<{ value: GoalUnit; label: string }> = [
+  { value: 'day', label: '일 목표' },
+  { value: 'week', label: '주 목표' },
+  { value: 'month', label: '월 목표' },
+  { value: 'year', label: '년 목표' },
+];
+
 interface GoalModalProps {
   isOpen: boolean;
   onClose: () => void;
-  currentGoal: number;
-  onSave: (newGoal: number) => void;
+  currentGoals: GoalSettings;
+  currentUnit: GoalUnit;
+  onSave: (goals: GoalSettings, unit: GoalUnit) => void;
 }
 
-export default function GoalModal({ isOpen, onClose, currentGoal, onSave }: GoalModalProps) {
-  const [goalInput, setGoalInput] = useState(currentGoal.toString());
+export default function GoalModal({ isOpen, onClose, currentGoals, currentUnit, onSave }: GoalModalProps) {
+  const [goals, setGoals] = useState<GoalSettings>({ ...currentGoals });
+  const [selectedUnit, setSelectedUnit] = useState<GoalUnit>(currentUnit);
 
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/20 backdrop-blur-sm">
-      <div className="glass p-6 rounded-[28px] w-full max-w-[400px] shadow-2xl">
-        <h3 className="text-base font-extrabold text-[#3F4145] mb-2">목표 매출액 설정</h3>
-        <p className="text-xs text-[#8A8D96] mb-4">대시보드의 달성률 계산 기준 목표 매출을 수정합니다.</p>
-        
-        <div className="mb-5">
-          <label className="block text-[11px] font-bold text-[#65676E] mb-1.5">목표 금액 (원)</label>
-          <input
-            type="number"
-            value={goalInput}
-            onChange={(e) => setGoalInput(e.target.value)}
-            className="w-full bg-white/70 border border-white/90 rounded-[14px] px-3.5 py-2.5 text-sm font-bold text-[#3F4145] outline-none"
-            placeholder="예: 1200000000"
-          />
+      <div className="glass w-full max-w-[480px] rounded-[28px] p-6 shadow-2xl">
+        <h3 className="mb-2 text-base font-extrabold text-[#3F4145]">목표 매출액 설정</h3>
+        <p className="mb-4 text-xs text-[#8A8D96]">단위별 목표액을 입력하고 달성률 계산에 사용할 기준을 선택합니다.</p>
+
+        <div className="mb-5 space-y-2" role="radiogroup" aria-label="목표 매출액 기준 단위">
+          {goalUnits.map(({ value, label }) => {
+            const selected = selectedUnit === value;
+            return (
+              <div key={value} className="grid grid-cols-[auto_1fr] items-center gap-3 rounded-[14px] bg-white/50 px-3.5 py-3">
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  onClick={() => setSelectedUnit(value)}
+                  className={`flex cursor-pointer items-center gap-2 text-xs font-bold ${selected ? 'text-[#3F4145]' : 'text-[#8A8D96]'}`}
+                >
+                  <span className="grid h-3.5 w-3.5 place-items-center rounded-full border border-[#8A8D96]" aria-hidden="true">
+                    {selected && <span className="h-1.5 w-1.5 rounded-full bg-[#3F4145]" />}
+                  </span>
+                  {label}
+                </button>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="0"
+                    value={goals[value]}
+                    onFocus={() => setSelectedUnit(value)}
+                    onChange={(event) => setGoals((current) => ({ ...current, [value]: Math.max(0, Number(event.target.value)) }))}
+                    className="w-full rounded-[12px] border border-white/90 bg-white/70 px-3 py-2 text-right text-sm font-bold text-[#3F4145] outline-none"
+                  />
+                  <span className="text-xs font-bold text-[#65676E]">원</span>
+                </div>
+              </div>
+            );
+          })}
         </div>
 
         <div className="flex justify-end gap-2">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 rounded-[12px] text-xs font-bold text-[#65676E] bg-white/40 hover:bg-white/60 transition"
-          >
+          <button type="button" onClick={onClose} className="rounded-[12px] bg-white/40 px-4 py-2 text-xs font-bold text-[#65676E] transition hover:bg-white/60">
             취소
           </button>
           <button
+            type="button"
             onClick={() => {
-              onSave(Number(goalInput));
+              onSave(goals, selectedUnit);
               onClose();
             }}
-            className="px-4 py-2 rounded-[12px] text-xs font-bold text-white bg-[#3F4145] hover:bg-[#2A2B2E] shadow-md transition"
+            className="rounded-[12px] bg-[#3F4145] px-4 py-2 text-xs font-bold text-white shadow-md transition hover:bg-[#2A2B2E]"
           >
             저장하기
           </button>

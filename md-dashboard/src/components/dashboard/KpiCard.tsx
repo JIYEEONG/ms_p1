@@ -1,96 +1,205 @@
-// 수치 카드 UI
-// 26.08.04 수정 (민)
-// 26.08.05 UI 변경에 따른 코드 변경
+// 현황 탭 목표 및 판매 실적 UI
 
 'use client';
 
 import React, { useState } from 'react';
-import GoalModal from './GoalModal';
+import GoalModal, { type GoalSettings, type GoalUnit } from './GoalModal';
+import type { DisplayCurrency } from './FilterBar';
 
-export default function KpiCards() {
-  const [goalAmount, setGoalAmount] = useState(1200000000);
-  const currentSales = 984500000;
-  const achievementRate = ((currentSales / goalAmount) * 100).toFixed(1);
+export interface OverviewKpiData {
+  total_sales: number;
+  achievement_base_sales: number;
+  order_count: number;
+  total_units: number;
+  sales_change_rate: number | null;
+  average_daily_orders: number;
+  return_rate: number;
+}
+
+interface MoneyDisplayProps {
+  currency: DisplayCurrency;
+  exchangeRate: number;
+}
+
+function formatMoney(value: number, currency: DisplayCurrency, exchangeRate: number) {
+  if (currency === 'USD') {
+    return `$${(value / exchangeRate).toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+  }
+  return `${Math.round(value).toLocaleString()}원`;
+}
+
+export function AchievementBanner({
+  data,
+  goalAmount,
+  loading,
+}: {
+  data: OverviewKpiData | null;
+  goalAmount: number;
+  loading: boolean;
+}) {
+  const rate = goalAmount > 0 ? ((data?.achievement_base_sales ?? 0) / goalAmount) * 100 : 0;
+
+  return (
+    <div className="rounded-[28px] border border-white/90 bg-white/70 px-6 py-5 shadow-[0_20px_35px_-10px_rgba(160,175,200,0.18),inset_0_1px_2px_0_rgba(255,255,255,0.8)] backdrop-blur-md">
+      <p className="text-lg font-black tracking-tight text-[#3F4145] sm:text-xl">
+        {loading ? '목표 달성 현황을 불러오고 있어요' : `목표까지 ${rate.toFixed(1)}% 도달했어요 🐶`}
+      </p>
+    </div>
+  );
+}
+
+export default function KpiCards({
+  data,
+  loading,
+  error,
+  goalAmount,
+  goalSettings,
+  goalUnit,
+  onGoalSettingsChange,
+  currency,
+  exchangeRate,
+}: {
+  data: OverviewKpiData | null;
+  loading: boolean;
+  error: string;
+  goalAmount: number;
+  goalSettings: GoalSettings;
+  goalUnit: GoalUnit;
+  onGoalSettingsChange: (goals: GoalSettings, unit: GoalUnit) => void;
+  currency: DisplayCurrency;
+  exchangeRate: number;
+}) {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const currentSales = data?.total_sales ?? 0;
+  const achievementRate = goalAmount > 0 ? (currentSales / goalAmount) * 100 : 0;
+  const remainingAmount = Math.max(goalAmount - currentSales, 0);
+  const exceededAmount = Math.max(currentSales - goalAmount, 0);
+  const valuePlaceholder = loading || error ? '—' : null;
+  const moneyDisplay: MoneyDisplayProps = { currency, exchangeRate };
 
   return (
     <>
-      <div className="kpi-grid-container">
-        {/* 카드 1 */}
-        <div className="glass-card flex flex-col justify-between">
-          <div>
-            <p className="text-xs font-bold text-[#8A8D96] mb-1">총 매출액 (Gross Sales)</p>
-            <h3 className="text-2xl font-black text-[#3F4145] mb-3">
-              ₩{currentSales.toLocaleString()}
-            </h3>
-          </div>
-          <div>
-            <span className="inline-block badge-ok px-2.5 py-1 rounded-[10px] text-[11px] font-bold">
-              ▲ 전년 대비 +14.2%
-            </span>
-          </div>
-        </div>
+      <div className="rounded-[28px] border border-white/90 bg-white/35 p-6 shadow-[0_20px_35px_-10px_rgba(160,175,200,0.16),inset_0_1px_2px_0_rgba(255,255,255,0.75)] backdrop-blur-md">
+        <h3 className="mb-4 text-base font-extrabold tracking-tight text-[#3F4145]">목표와 달성</h3>
 
-        {/* 카드 2 */}
-        <div className="glass-card flex flex-col justify-between">
-          <div>
-            <div className="flex justify-between items-start mb-1">
-              <p className="text-xs font-bold text-[#8A8D96]">목표 달성률</p>
-              <button
-                onClick={() => setIsModalOpen(true)}
-                className="text-[10px] text-[#65676E] bg-white/60 px-2 py-0.5 rounded-[8px] font-bold hover:bg-white transition cursor-pointer"
-              >
-                목표 수정 ✏️
-              </button>
+        <div className="space-y-5">
+          <section className="rounded-[22px] border border-white/80 bg-white/45 p-5" aria-labelledby="sales-goal-title">
+            <div className="mb-4">
+              <h4 id="sales-goal-title" className="text-sm font-extrabold text-[#3F4145]">총 매출액 · 목표 매출액</h4>
             </div>
-            <h3 className="text-2xl font-black text-[#3F4145] mb-2">{achievementRate}%</h3>
-          </div>
-          <div>
-            <div className="w-full bg-black/5 h-2 rounded-full overflow-hidden mb-1.5">
+
+            {/* 1행: 목표 매출액(연한색) 위에 총 매출액(진한색)을 표시 */}
+            <div className="relative mb-4 h-5 w-full overflow-hidden rounded-full bg-black/5" role="img" aria-label={`목표 대비 총 매출액 ${achievementRate.toFixed(1)}%`}>
               <div
-                className="bg-[#4F7761] h-full rounded-full transition-all duration-500"
-                style={{ width: `${Math.min(Number(achievementRate), 100)}%` }}
+                className="h-full rounded-full bg-[#4F7761] transition-all duration-500"
+                style={{ width: `${Math.min(achievementRate, 100)}%` }}
               />
             </div>
-            <p className="text-[10px] text-[#8A8D96] font-medium">
-              목표: ₩{goalAmount.toLocaleString()}
+
+            {/* 2행: 총 매출액 + 목표 매출액 */}
+            <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="rounded-[16px] bg-white/60 px-4 py-3">
+                <p className="mb-1 text-xs font-bold text-[#8A8D96]">총 매출액</p>
+                <p className="text-2xl font-black text-[#3F4145]">{valuePlaceholder ?? formatMoney(currentSales, moneyDisplay.currency, moneyDisplay.exchangeRate)}</p>
+              </div>
+              <div className="rounded-[16px] bg-white/60 px-4 py-3">
+                <div className="flex flex-col items-start justify-between gap-3 xl:flex-row">
+                  <div className="min-w-0">
+                    <div className="mb-1 flex items-center gap-2">
+                      <p className="text-xs font-bold text-[#8A8D96]">목표 매출액</p>
+                      <button
+                        type="button"
+                        onClick={() => setIsModalOpen(true)}
+                        className="cursor-pointer text-[10px] font-bold text-[#65676E] transition hover:text-[#3F4145]"
+                      >
+                        목표 수정 ✏️
+                      </button>
+                    </div>
+                    <p className="text-2xl font-black text-[#3F4145]">{formatMoney(goalAmount, moneyDisplay.currency, moneyDisplay.exchangeRate)}</p>
+                    <p className="mt-1 text-[10px] font-semibold text-[#8A8D96]">선택 기간 환산 목표</p>
+                  </div>
+
+                  <div className="flex shrink-0 items-start gap-3 self-end xl:self-auto" role="radiogroup" aria-label="목표 매출액 단위">
+                    <span className="pt-0.5 text-[10px] font-extrabold text-[#65676E]">목표 단위</span>
+                    <div className="flex flex-col gap-1.5">
+                      {([
+                        ['day', '일'],
+                        ['week', '주'],
+                        ['month', '월'],
+                        ['year', '년'],
+                      ] as const).map(([value, label]) => {
+                        const selected = goalUnit === value;
+                        return (
+                          <button
+                            key={value}
+                            type="button"
+                            role="radio"
+                            aria-checked={selected}
+                            onClick={() => onGoalSettingsChange(goalSettings, value)}
+                            className={`flex cursor-pointer items-center justify-end gap-1.5 text-[10px] font-bold transition ${selected ? 'text-[#3F4145]' : 'text-[#8A8D96]'}`}
+                          >
+                            <span>{label}</span>
+                            <span className="grid h-3.5 w-3.5 place-items-center rounded-full border border-[#8A8D96]" aria-hidden="true">
+                              {selected && <span className="h-1.5 w-1.5 rounded-full bg-[#3F4145]" />}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 3행: 목표까지 남은 금액 */}
+            <p className="text-sm font-extrabold text-[#4F7761]">
+              {valuePlaceholder ?? (
+                remainingAmount > 0
+                  ? `목표 달성까지 ${formatMoney(remainingAmount, moneyDisplay.currency, moneyDisplay.exchangeRate)} 남았어요.`
+                  : `목표를 ${formatMoney(exceededAmount, moneyDisplay.currency, moneyDisplay.exchangeRate)} 초과 달성했어요.`
+              )}
             </p>
-          </div>
-        </div>
+          </section>
 
-        {/* 카드 3 */}
-        <div className="glass-card flex flex-col justify-between">
-          <div>
-            <p className="text-xs font-bold text-[#8A8D96] mb-1">주문 건수 (Orders)</p>
-            <h3 className="text-2xl font-black text-[#3F4145] mb-3">24,580 건</h3>
-          </div>
-          <div>
-            <span className="inline-block badge-info px-2.5 py-1 rounded-[10px] text-[11px] font-bold">
-              평균 일일 819건
-            </span>
-          </div>
-        </div>
+          <section className="rounded-[22px] border border-white/80 bg-white/45 p-5" aria-labelledby="sales-volume-title">
+            <h4 id="sales-volume-title" className="mb-4 text-sm font-extrabold text-[#3F4145]">주문과 판매량</h4>
+            <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+              <div className="glass-card flex flex-col justify-between">
+                <div>
+                  <p className="mb-1 text-xs font-bold text-[#8A8D96]">주문 건수 (Orders)</p>
+                  <h3 className="mb-3 text-2xl font-black text-[#3F4145]">{valuePlaceholder ?? `${(data?.order_count ?? 0).toLocaleString()} 건`}</h3>
+                </div>
+                <span className="badge-info inline-block w-fit rounded-[10px] px-2.5 py-1 text-[11px] font-bold">
+                  평균 일일 {(data?.average_daily_orders ?? 0).toLocaleString()}건
+                </span>
+              </div>
 
-        {/* 카드 4 */}
-        <div className="glass-card flex flex-col justify-between">
-          <div>
-            <p className="text-xs font-bold text-[#8A8D96] mb-1">총 판매 수량 (Units)</p>
-            <h3 className="text-2xl font-black text-[#3F4145] mb-3">38,920 개</h3>
-          </div>
-          <div>
-            <span className="inline-block badge-ok px-2.5 py-1 rounded-[10px] text-[11px] font-bold">
-              반품률 2.1% (양호)
-            </span>
-          </div>
+              <div className="glass-card flex flex-col justify-between">
+                <div>
+                  <p className="mb-1 text-xs font-bold text-[#8A8D96]">총 판매량 (Units)</p>
+                  <h3 className="mb-3 text-2xl font-black text-[#3F4145]">{valuePlaceholder ?? `${(data?.total_units ?? 0).toLocaleString()} 개`}</h3>
+                </div>
+                <span className="badge-ok inline-block w-fit rounded-[10px] px-2.5 py-1 text-[11px] font-bold">
+                  반품률 {(data?.return_rate ?? 0).toLocaleString()}%
+                </span>
+              </div>
+            </div>
+          </section>
         </div>
       </div>
 
-      <GoalModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        currentGoal={goalAmount}
-        onSave={(newGoal) => setGoalAmount(newGoal)}
-      />
+      {isModalOpen && (
+        <GoalModal
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          currentGoals={goalSettings}
+          currentUnit={goalUnit}
+          onSave={onGoalSettingsChange}
+        />
+      )}
     </>
   );
 }
