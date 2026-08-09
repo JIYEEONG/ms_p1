@@ -1,4 +1,5 @@
 // 26.08.09 AI고도화의 따른 파일 추가
+// 26.08.XX 조회 기간 명시 카드 추가 (period_card_label)
 
 // src/components/ReportModal.tsx
 'use client';
@@ -23,6 +24,20 @@ export default function ReportModal({ isOpen, onClose, reportData }: ReportModal
           <h2 className="text-xl font-bold">📊 AI 판매현황 & MD 액션플랜 리포트</h2>
           <button onClick={onClose} className="px-3 py-1 bg-gray-100 rounded-lg hover:bg-gray-200">닫기</button>
         </div>
+
+        {/* 0. 조회 기간 명시 배너 (헤더 바로 아래, 제목처럼 크게) */}
+        {reportData.period_card_label ? (
+          <div className="p-4 bg-indigo-50 border-2 border-indigo-200 rounded-xl text-center">
+            <p className="text-2xl font-extrabold text-indigo-900 tracking-tight">
+              📅 {reportData.period_card_label}
+            </p>
+          </div>
+        ) : (
+          // TODO: 정상 작동 확인되면 이 디버그 줄 삭제
+          <div className="p-2 bg-red-50 border border-red-200 rounded text-xs text-red-600">
+            ⚠ period_card_label 없음 - 백엔드 응답 확인 필요 (재시작 여부, Network 탭 Response)
+          </div>
+        )}
 
         {/* 1. 상단 KPI Summary */}
         <div className="grid grid-cols-3 gap-4">

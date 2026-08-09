@@ -1,12 +1,15 @@
+# app/services/rag_service.py
 # 26.08.09 AI고도화 작업에 따른 코드 수정
-
+# 26.08.XX 기간 파싱 + 되묻기(모호/범위밖) + 상단 기간 명시 추가
+#   -> charts/md_insights JSON 스키마는 원본과 100% 동일. 아래 표시된 부분만 추가/변경.
 
 import json
 from azure.core.credentials import AzureKeyCredential
 from azure.search.documents import SearchClient
 from openai import AzureOpenAI
 from app.core.config import settings
-from app.services.tools import get_kpi_and_efficiency, get_inventory_risk
+from app.services.tools import get_kpi_and_efficiency, get_inventory_risk, get_orders_date_range
+from app.services.period_parser import parse_period, to_card_label, PERIOD_INPUT_HINT, PERIOD_EXAMPLES
 
 openai_client = AzureOpenAI(
     azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
@@ -32,10 +35,38 @@ def retrieve_policy_docs(query: str) -> str:
 
 def classify_intent(user_prompt: str) -> str:
     """사용자의 질문 의도(Intent) 분류"""
-    report_keywords = ["리포트", "보고서", "액션플랜", "분석", "현황", "추이", "실적", "재고", "매출", "지표", "작성"]
+    # [변경] "수치" 추가 - 입력창 힌트 예시 문구("25년 8월 월간수치 보여줘")가
+    #        기존 키워드 목록에 안 걸려서 REPORT로 분류가 안 되는 문제 발견, 수정.
+    report_keywords = ["리포트", "보고서", "액션플랜", "분석", "현황", "추이", "실적", "재고", "매출", "지표", "작성", "수치"]
     if any(keyword in user_prompt for keyword in report_keywords):
         return "REPORT"
     return "CHAT"
+
+
+# ============================================================
+# [신규] 기간이 DB 실데이터 범위 안에 있는지 확인
+# ============================================================
+def _is_within_data_range(period) -> tuple[bool, dict]:
+    data_range = get_orders_date_range()
+    min_date, max_date = data_range.get("min_date"), data_range.get("max_date")
+    if not min_date or not max_date:
+        # 범위 조회 자체가 실패하면(DB 연결 문제 등) 검증을 건너뛰고 통과시킴 -> 리포트 생성은 시도
+        return True, data_range
+    in_range = (period.start_date >= min_date) and (period.end_date <= max_date)
+    return in_range, data_range
+
+
+def _clarify_response(message: str, extra: dict | None = None) -> dict:
+    resp = {
+        "type": "clarify_period",
+        "message": message,
+        "hint": PERIOD_INPUT_HINT,
+        "examples": PERIOD_EXAMPLES,
+    }
+    if extra:
+        resp.update(extra)
+    return resp
+
 
 def generate_sales_report(user_prompt: str) -> dict:
     intent = classify_intent(user_prompt)
@@ -46,16 +77,48 @@ def generate_sales_report(user_prompt: str) -> dict:
             "message": "안녕하세요! MD 대시보드 AI 보조입니다. '리포트 작성해줘'라고 입력하시면 시각화 대시보드를 생성해 드립니다."
         }
 
-    kpi_efficiency = get_kpi_and_efficiency()
-    inventory_summary = get_inventory_risk()
+    # ============================================================
+    # [신규] 1) 기간 파싱 - 모호하면 리포트 생성 없이 되묻기
+    # ============================================================
+    period = parse_period(user_prompt)
+
+    if period.was_ambiguous:
+        return _clarify_response(
+            "어떤 기간의 리포트를 원하시나요? 일/주/월/분기/년 단위로 정확한 기간을 알려주세요."
+        )
+
+    # ============================================================
+    # [신규] 2) 파싱은 됐지만 실제 DB 데이터 범위 밖이면 되묻기
+    # ============================================================
+    in_range, data_range = _is_within_data_range(period)
+    if not in_range:
+        return _clarify_response(
+            f"요청하신 기간({period.display_label})에는 데이터가 없습니다. "
+            f"현재 조회 가능한 데이터 범위는 {data_range.get('min_date')} ~ {data_range.get('max_date')} 입니다. "
+            f"이 범위 안의 기간으로 다시 요청해주세요.",
+            extra={"available_range": data_range},
+        )
+
+    # ============================================================
+    # [변경] 3) 날짜 인자를 넘겨서 해당 기간 데이터만 조회
+    # ============================================================
+    kpi_efficiency = get_kpi_and_efficiency(period.start_datetime, period.end_datetime)
+    inventory_summary = get_inventory_risk(period.start_datetime, period.end_datetime)
     policy_context = retrieve_policy_docs(user_prompt)
 
     trend_data = kpi_efficiency.get('monthly_trend', [])
     inv_data = inventory_summary.get('hub_inventory_summary', [])
 
+    # ============================================================
+    # [변경] 4) 시스템 프롬프트에 "적용된 기간"을 못박아 LLM이 다른 기간을 언급 못 하게 함
+    # ============================================================
     system_prompt = f"""
     당신은 커머스 데이터 분석 Senior MD 전문가입니다.
     제공된 [Azure SQL DB 데이터]만을 기반으로 분석하여 JSON 리포트를 작성하세요.
+
+    [기간 규칙 - 반드시 준수]
+    - 이번 리포트의 적용 기간은 "{period.display_label}" 입니다. 이 기간 외의 다른 날짜/기간을 언급하지 마세요.
+    - `sales_analysis`, `inventory_risk` 서술에도 이 기간 기준으로만 이야기하세요.
 
     [엄격 규칙]
     1. `summary_kpi`의 수치(`total_sales`, `asp`, `atv`, `target_rate`)는 DB 집계 결과 데이터인 `kpi_efficiency` 값을 임의 변경 없이 정확히 매핑하세요.
@@ -119,6 +182,21 @@ def generate_sales_report(user_prompt: str) -> dict:
 
         res_json = json.loads(response.choices[0].message.content)
         res_json["type"] = "report"
+
+        # ============================================================
+        # [신규] 5) 화면 상단에 보여줄 기간 정보 - LLM이 아니라 코드가 직접 박아넣음
+        #    (LLM이 기간을 잘못 쓰거나 누락해도 항상 정확한 값이 노출되도록)
+        # ============================================================
+        res_json["display_label"] = period.display_label
+        res_json["period_card_label"] = to_card_label(period)  # [신규] 상단 기간 카드용 짧은 포맷
+        res_json["period_meta"] = period.to_dict()
+
+        print("\n================ [FINAL REPORT JSON] ================")
+        print("display_label     :", repr(res_json.get("display_label")))
+        print("period_card_label :", repr(res_json.get("period_card_label")))
+        print("period_meta       :", res_json.get("period_meta"))
+        print("======================================================\n")
+
         return res_json
 
     except Exception as e:

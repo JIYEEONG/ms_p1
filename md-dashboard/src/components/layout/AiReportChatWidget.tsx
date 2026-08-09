@@ -4,6 +4,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import * as XLSX from 'xlsx';
 import {
   ResponsiveContainer,
   BarChart,
@@ -28,7 +29,233 @@ export default function AiReportChatWidget() {
   useEffect(() => {
     setMounted(true);
   }, []);
+const handleExcelDownload = () => {
+  if (!reportData) {
+    alert('다운로드할 리포트 데이터가 없습니다.');
+    return;
+  }
 
+  try {
+    const workbook = XLSX.utils.book_new();
+
+    // =====================================================
+    // 1. 요약 KPI
+    // =====================================================
+    const kpiData = [
+      ['AI 판매현황 리포트'],
+      [],
+      ['항목', '값'],
+      [
+        '기간',
+        reportData.period_card_label ||
+          reportData.display_label ||
+          '',
+      ],
+      [
+        '목표 달성률',
+        reportData.summary_kpi?.target_rate || '0.0%',
+      ],
+      [
+        '총 매출액',
+        reportData.summary_kpi?.total_sales || 0,
+      ],
+      [
+        '평균 판매단가 (ASP)',
+        reportData.summary_kpi?.asp || 0,
+      ],
+      [
+        '객단가 (ATV)',
+        reportData.summary_kpi?.atv || 0,
+      ],
+    ];
+
+    const kpiSheet = XLSX.utils.aoa_to_sheet(kpiData);
+
+    kpiSheet['!cols'] = [
+      { wch: 25 },
+      { wch: 35 },
+    ];
+
+    XLSX.utils.book_append_sheet(
+      workbook,
+      kpiSheet,
+      '요약 KPI'
+    );
+
+    // =====================================================
+    // 2. 차트 데이터
+    // =====================================================
+    (reportData.charts || []).forEach(
+      (chart: any, chartIndex: number) => {
+        if (!chart.data || !Array.isArray(chart.data)) {
+          return;
+        }
+
+        const chartSheetData = [
+          [chart.title || `차트 ${chartIndex + 1}`],
+          [],
+        ];
+
+        if (chart.data.length > 0) {
+          const keys = Object.keys(chart.data[0]);
+
+          chartSheetData.push(keys);
+
+          chart.data.forEach((row: any) => {
+            chartSheetData.push(
+              keys.map((key) => row[key])
+            );
+          });
+        }
+
+        const chartSheet = XLSX.utils.aoa_to_sheet(
+          chartSheetData
+        );
+
+        chartSheet['!cols'] = [
+          { wch: 20 },
+          { wch: 18 },
+          { wch: 18 },
+          { wch: 18 },
+        ];
+
+        // Excel 시트 이름은 최대 31자
+        let sheetName =
+          chart.title ||
+          `차트${chartIndex + 1}`;
+
+        sheetName = sheetName
+          .replace(/[\\\/\?\*\[\]\:]/g, '')
+          .substring(0, 31);
+
+        // 같은 이름 방지
+        if (!sheetName) {
+          sheetName = `차트${chartIndex + 1}`;
+        }
+
+        XLSX.utils.book_append_sheet(
+          workbook,
+          chartSheet,
+          sheetName
+        );
+      }
+    );
+
+    // =====================================================
+    // 3. MD 진단
+    // =====================================================
+    const insightData = [
+      ['MD 진단 리포트'],
+      [],
+      ['구분', '내용'],
+      [
+        '실적 및 효율 지표 분석',
+        reportData.md_insights?.sales_analysis || '',
+      ],
+      [
+        '재고 리스크 진단',
+        reportData.md_insights?.inventory_risk || '',
+      ],
+    ];
+
+    const insightSheet =
+      XLSX.utils.aoa_to_sheet(insightData);
+
+    insightSheet['!cols'] = [
+      { wch: 30 },
+      { wch: 100 },
+    ];
+
+    XLSX.utils.book_append_sheet(
+      workbook,
+      insightSheet,
+      'MD 진단'
+    );
+
+    // =====================================================
+    // 4. 부서별 액션 플랜
+    // =====================================================
+    const actionData = [
+      ['부서별 제안 액션 플랜'],
+      [],
+      ['부서', '실행 전략'],
+    ];
+
+    (
+      reportData.md_insights?.action_plans || []
+    ).forEach((plan: any) => {
+      actionData.push([
+        plan.team || '',
+        plan.action || '',
+      ]);
+    });
+
+    const actionSheet =
+      XLSX.utils.aoa_to_sheet(actionData);
+
+    actionSheet['!cols'] = [
+      { wch: 20 },
+      { wch: 100 },
+    ];
+
+    XLSX.utils.book_append_sheet(
+      workbook,
+      actionSheet,
+      '액션 플랜'
+    );
+
+    // =====================================================
+    // 5. 전체 JSON 원본 데이터
+    // =====================================================
+    const jsonData = [
+      ['리포트 원본 JSON'],
+      [],
+      [JSON.stringify(reportData, null, 2)],
+    ];
+
+    const jsonSheet =
+      XLSX.utils.aoa_to_sheet(jsonData);
+
+    jsonSheet['!cols'] = [
+      { wch: 120 },
+    ];
+
+    XLSX.utils.book_append_sheet(
+      workbook,
+      jsonSheet,
+      '원본 데이터'
+    );
+
+    // =====================================================
+    // 6. 파일명
+    // =====================================================
+    const period =
+      reportData.period_card_label ||
+      reportData.display_label ||
+      'AI_리포트';
+
+    const safePeriod = period
+      .replace(/[\\\/:*?"<>|]/g, '_')
+      .replace(/\s+/g, '_');
+
+    const fileName = `AI_판매리포트_${safePeriod}.xlsx`;
+
+    // =====================================================
+    // 7. 다운로드
+    // =====================================================
+    XLSX.writeFile(workbook, fileName);
+
+  } catch (error) {
+    console.error(
+      '❌ Excel Download Error:',
+      error
+    );
+
+    alert(
+      '엑셀 파일 생성 중 오류가 발생했습니다.'
+    );
+  }
+};
   const handleGenerate = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!prompt.trim() || loading) return;
@@ -297,11 +524,11 @@ export default function AiReportChatWidget() {
 
               {/* 푸터 */}
               <div className="px-8 py-4 border-t border-gray-100 bg-white flex justify-between items-center text-xs text-[#8A8D96]">
-                <span>
+                <span className="shrink-0">
                   {reportData?.disclaimer ||
                     '※ ATV/UPT는 order_id 데이터 부재로 order_item_id 단위 근사치입니다.'}
                 </span>
-                <div className="flex gap-2">
+                <div className="flex gap-2shrink-0 ml-4">
                   <button
                     onClick={() => setIsModalOpen(false)}
                     className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-bold transition-colors cursor-pointer"
@@ -317,9 +544,16 @@ export default function AiReportChatWidget() {
                         alert('리포트 JSON 데이터가 클립보드에 복사되었습니다.');
                       }
                     }}
-                    className="px-4 py-2 bg-[#3F4145] hover:bg-slate-700 text-white rounded-xl font-bold transition-colors shadow-sm cursor-pointer"
+                    className="px-4 py-2 bg-[#3F4145] hover:bg-slate-700 text-white rounded-xl font-bold transition-colors shadow-sm cursor-pointer whitespace-nowrap"
                   >
                     데이터 복사
+                    <button
+                     onClick={handleExcelDownload}
+                     disabled={!reportData}
+                     className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 text-white rounded-xl font-bold transition-colors shadow-sm cursor-pointer whitespace-nowrap"
+                     >
+                      📥 엑셀 다운로드
+                      </button>
                   </button>
                 </div>
               </div>
