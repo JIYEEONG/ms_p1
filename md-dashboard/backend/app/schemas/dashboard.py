@@ -13,9 +13,23 @@ class FilterRequest(BaseModel):
     hub: Optional[str] = "전체"
 
 # --- 월별 순매출 추이 ---
+class SalesTrendPoint(BaseModel):
+    label: str
+    period_start: str
+    period_days: int
+    current_net_sales: float
+    current_gross_sales: float
+    previous_net_sales: float
+    previous_gross_sales: float
+    two_year_net_sales: float
+    two_year_gross_sales: float
+
+
 class SalesTrendResponse(BaseModel):
-    month: str
-    sales: float
+    current_label: str
+    previous_label: str
+    two_year_label: str
+    points: List[SalesTrendPoint]
 
     class Config:
         from_attributes = True
@@ -79,6 +93,25 @@ class FilterOptionsResponse(BaseModel):
     category_large: List[str]
     category_middle: List[str]
     products: List[ProductOption]
+
+
+class OverviewFilterOptionsResponse(BaseModel):
+    min_date: str
+    max_date: str
+    category_large: List[str]
+    category_middle: List[str]
+    seasons: List[str]
+    hubs: List[str]
+
+
+class OverviewKpiResponse(BaseModel):
+    total_sales: float
+    achievement_base_sales: float
+    order_count: int
+    total_units: int
+    sales_change_rate: Optional[float] = None
+    average_daily_orders: float
+    return_rate: float
 
 class CategorySalesResponse(BaseModel):
     name: str

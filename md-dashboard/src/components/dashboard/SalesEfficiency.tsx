@@ -12,26 +12,35 @@ export default function SalesEfficiency() {
         <p className="text-xs text-[#8A8D96]">주문 단위와 판매수량 기준</p>
       </div>
 
-      <div className="flex flex-col gap-3">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
         {/* ASP */}
         <div className="bg-white/60 border border-white/80 p-4 rounded-[20px]">
-          <span className="text-[11px] font-bold text-[#8A8D96] block mb-1">ASP</span>
-          <h4 className="text-xl font-black text-[#3F4145] mb-0.5">₩93,993</h4>
-          <p className="text-[10px] text-[#8A8D96] font-medium">총매출액 ÷ 판매수량</p>
+          <p className="mb-1 text-xs font-bold text-[#8A8D96]">평균 판매 단가</p>
+          <h4 className="mb-1 text-2xl font-black text-[#3F4145]">93,993원</h4>
+          <div className="flex items-center gap-2 text-[10px] font-medium text-[#8A8D96]">
+            <span className="font-extrabold">ASP</span>
+            <span>총매출액 ÷ 판매수량</span>
+          </div>
         </div>
 
         {/* ATV */}
         <div className="bg-white/60 border border-white/80 p-4 rounded-[20px]">
-          <span className="text-[11px] font-bold text-[#8A8D96] block mb-1">ATV</span>
-          <h4 className="text-xl font-black text-[#3F4145] mb-0.5">₩110,847</h4>
-          <p className="text-[10px] text-[#8A8D96] font-medium">총매출액 ÷ 주문건수</p>
+          <p className="mb-1 text-xs font-bold text-[#8A8D96]">주문 1건당 평균 결제금액</p>
+          <h4 className="mb-1 text-2xl font-black text-[#3F4145]">110,847원</h4>
+          <div className="flex items-center gap-2 text-[10px] font-medium text-[#8A8D96]">
+            <span className="font-extrabold">ATV</span>
+            <span>총매출액 ÷ 주문건수</span>
+          </div>
         </div>
 
         {/* UPT */}
         <div className="bg-white/60 border border-white/80 p-4 rounded-[20px]">
-          <span className="text-[11px] font-bold text-[#8A8D96] block mb-1">UPT</span>
-          <h4 className="text-xl font-black text-[#3F4145] mb-0.5">1.18</h4>
-          <p className="text-[10px] text-[#8A8D96] font-medium">판매수량 ÷ 주문건수</p>
+          <p className="mb-1 text-xs font-bold text-[#8A8D96]">주문 1건당 평균 구매 수량</p>
+          <h4 className="mb-1 text-2xl font-black text-[#3F4145]">1.18개</h4>
+          <div className="flex items-center gap-2 text-[10px] font-medium text-[#8A8D96]">
+            <span className="font-extrabold">UPT</span>
+            <span>판매수량 ÷ 주문건수</span>
+          </div>
         </div>
       </div>
     </div>

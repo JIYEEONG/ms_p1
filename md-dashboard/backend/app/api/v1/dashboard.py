@@ -8,10 +8,11 @@
 # from app.schemas.dashboard import SalesTrendResponse
 
 from datetime import date, timedelta
+import calendar
 import math
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import func, literal_column
+from sqlalchemy import Date, func, literal_column
 from typing import List, Optional
 
 from app.core.database import get_db
@@ -24,10 +25,13 @@ from app.models.purchase_order import PurchaseOrder
 from app.models.claims import Claim
 from app.schemas.dashboard import (
     SalesTrendResponse,
+    SalesTrendPoint,
     ProductInventoryResponse,
     ForecastResponse,
     ForecastChartPoint,
     FilterOptionsResponse,
+    OverviewFilterOptionsResponse,
+    OverviewKpiResponse,
     ProductOption,
     CategorySalesResponse,
     HubCardData, #HUBS 탭에 사용
@@ -49,28 +53,177 @@ router = APIRouter()
 REFERENCE_DATE = date(2025, 12, 31)
 
 
-@router.get("/sales-trend", response_model=List[SalesTrendResponse])
-def get_sales_trend(
-    category: Optional[str] = Query("전체"),
-    db: Session = Depends(get_db)
-):
-    """
-    Azure DB dbo.ORDERS 테이블 연동: 월별 순매출 조회
-    """
-    month_col = literal_column("FORMAT(dbo.ORDERS.order_datetime, 'MM')")
+def _previous_year(value: date) -> date:
+    day = min(value.day, calendar.monthrange(value.year - 1, value.month)[1])
+    return value.replace(year=value.year - 1, day=day)
 
-    query = (
+
+def _apply_overview_filters(
+    query,
+    start_date: date,
+    end_date: date,
+    category_large: Optional[str],
+    category_middle: Optional[str],
+    season: Optional[str],
+    hub: Optional[str],
+    db: Session,
+):
+    query = query.filter(Order.order_datetime >= start_date)
+    query = query.filter(Order.order_datetime < end_date + timedelta(days=1))
+
+    if category_large or category_middle:
+        query = query.join(ProductSku, Order.sku_id == ProductSku.sku_id)
+        if category_large:
+            query = query.filter(ProductSku.category_large == category_large)
+        if category_middle:
+            query = query.filter(ProductSku.category_middle == category_middle)
+
+    season_months = {
+        "봄(2월1일-4월30일)": [2, 3, 4],
+        "여름(5월1일-8월31일)": [5, 6, 7, 8],
+        "가을(9월1일-10월31일)": [9, 10],
+        "겨울(11월1일-1월31일)": [11, 12, 1],
+    }
+    if season in season_months:
+        query = query.filter(func.month(Order.order_datetime).in_(season_months[season]))
+
+    if hub:
+        hub_ids = [
+            hub_id
+            for (hub_id,) in (
+                db.query(InventoryRaw.hub_id)
+                .filter(InventoryRaw.hub_name == hub)
+                .distinct()
+                .all()
+            )
+        ]
+        query = query.filter(Order.hub_id.in_(hub_ids))
+
+    return query
+
+
+@router.get("/sales-trend", response_model=SalesTrendResponse)
+def get_sales_trend(
+    start_date: date = Query(...),
+    end_date: date = Query(...),
+    unit: str = Query("month", pattern="^(week|month|year)$"),
+    category_large: Optional[str] = Query(None),
+    category_middle: Optional[str] = Query(None),
+    season: Optional[str] = Query(None),
+    hub: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+):
+    """선택 기간의 주·월·연 단위 순매출을 전년·재작년과 비교한다."""
+    if start_date > end_date:
+        raise HTTPException(status_code=400, detail="시작일은 종료일보다 늦을 수 없습니다.")
+
+    bucket_sql = {
+        "week": "DATEADD(day, -(DATEDIFF(day, 0, dbo.ORDERS.order_datetime) % 7), CAST(dbo.ORDERS.order_datetime AS date))",
+        "month": "DATEFROMPARTS(YEAR(dbo.ORDERS.order_datetime), MONTH(dbo.ORDERS.order_datetime), 1)",
+        "year": "DATEFROMPARTS(YEAR(dbo.ORDERS.order_datetime), 1, 1)",
+    }
+    bucket = literal_column(bucket_sql[unit], type_=Date)
+    claim_totals = (
         db.query(
-            month_col.label("month"),
-            func.sum(Order.total_sales).label("sales")
+            Claim.order_item_id.label("order_item_id"),
+            func.sum(Claim.claim_qty).label("claim_qty"),
         )
-        .group_by(month_col)
-        .order_by(month_col)
+        .group_by(Claim.order_item_id)
+        .subquery()
     )
 
-    results = query.all()
+    def load_period(period_start: date, period_end: date):
+        net_sales = func.sum(
+            Order.total_sales
+            - (func.coalesce(claim_totals.c.claim_qty, 0) * Order.selling_price)
+        )
+        query = (
+            db.query(
+                bucket.label("bucket_start"),
+                net_sales.label("net_sales"),
+                func.sum(Order.total_sales).label("gross_sales"),
+            )
+            .select_from(Order)
+            .filter(Order.order_status == "정상")
+            .outerjoin(claim_totals, claim_totals.c.order_item_id == Order.order_item_id)
+        )
+        query = _apply_overview_filters(
+            query, period_start, period_end,
+            category_large, category_middle, season, hub, db,
+        )
+        rows = query.group_by(bucket).order_by(bucket).all()
+        return {
+            row.bucket_start: (float(row.net_sales or 0), float(row.gross_sales or 0))
+            for row in rows
+        }
 
-    return [{"month": str(r[0]), "sales": float(r[1] or 0)} for r in results]
+    def bucket_start_for(value: date) -> date:
+        if unit == "week":
+            return value - timedelta(days=value.weekday())
+        if unit == "month":
+            return value.replace(day=1)
+        return value.replace(month=1, day=1)
+
+    def next_bucket(value: date) -> date:
+        if unit == "week":
+            return value + timedelta(days=7)
+        if unit == "month":
+            return (value.replace(day=28) + timedelta(days=4)).replace(day=1)
+        return value.replace(year=value.year + 1)
+
+    def ordered_values(data, period_start: date, period_end: date):
+        values = []
+        item = bucket_start_for(period_start)
+        while item <= period_end:
+            values.append(data.get(item, (0.0, 0.0)))
+            item = next_bucket(item)
+        return values
+
+    previous_start = _previous_year(start_date)
+    previous_end = _previous_year(end_date)
+    two_year_start = _previous_year(previous_start)
+    two_year_end = _previous_year(previous_end)
+    current = ordered_values(load_period(start_date, end_date), start_date, end_date)
+    previous = ordered_values(load_period(previous_start, previous_end), previous_start, previous_end)
+    two_year = ordered_values(load_period(two_year_start, two_year_end), two_year_start, two_year_end)
+
+    points = []
+    cursor = bucket_start_for(start_date)
+    index = 0
+    while cursor <= end_date:
+        bucket_end = min(next_bucket(cursor) - timedelta(days=1), end_date)
+        visible_start = max(cursor, start_date)
+        current_values = current[index] if index < len(current) else (0.0, 0.0)
+        previous_values = previous[index] if index < len(previous) else (0.0, 0.0)
+        two_year_values = two_year[index] if index < len(two_year) else (0.0, 0.0)
+
+        if unit == "week":
+            label = cursor.strftime("%m.%d")
+        elif unit == "month":
+            label = cursor.strftime("%m월")
+        else:
+            label = cursor.strftime("%Y년")
+
+        points.append(SalesTrendPoint(
+            label=label,
+            period_start=cursor.isoformat(),
+            period_days=(bucket_end - visible_start).days + 1,
+            current_net_sales=current_values[0],
+            current_gross_sales=current_values[1],
+            previous_net_sales=previous_values[0],
+            previous_gross_sales=previous_values[1],
+            two_year_net_sales=two_year_values[0],
+            two_year_gross_sales=two_year_values[1],
+        ))
+        cursor = next_bucket(cursor)
+        index += 1
+
+    return SalesTrendResponse(
+        current_label="해당 기간",
+        previous_label="전년 동기",
+        two_year_label="재작년 동기",
+        points=points,
+    )
 
 
 @router.get("/risk-products", response_model=List[ProductInventoryResponse])
@@ -228,6 +381,125 @@ def get_filter_options(
         category_large=large_options,
         category_middle=middle_options,
         products=products,
+    )
+
+
+@router.get("/overview-filter-options", response_model=OverviewFilterOptionsResponse)
+def get_overview_filter_options(db: Session = Depends(get_db)):
+    """현황 탭 분석 조건에 사용하는 SQL Server 기반 필터 목록."""
+    min_date, max_date = db.query(
+        func.min(Order.order_datetime),
+        func.max(Order.order_datetime),
+    ).one()
+
+    if min_date is None or max_date is None:
+        raise HTTPException(status_code=404, detail="ORDERS 테이블에 기간 데이터가 없습니다.")
+
+    category_large = [
+        value
+        for (value,) in (
+            db.query(ProductSku.category_large)
+            .filter(ProductSku.category_large.isnot(None))
+            .distinct()
+            .order_by(ProductSku.category_large)
+            .all()
+        )
+    ]
+    category_middle = [
+        value
+        for (value,) in (
+            db.query(ProductSku.category_middle)
+            .filter(ProductSku.category_middle.isnot(None))
+            .distinct()
+            .order_by(ProductSku.category_middle)
+            .all()
+        )
+    ]
+    hubs = [
+        value
+        for (value,) in (
+            db.query(InventoryRaw.hub_name)
+            .filter(InventoryRaw.hub_name.isnot(None))
+            .distinct()
+            .order_by(InventoryRaw.hub_name)
+            .all()
+        )
+    ]
+
+    return OverviewFilterOptionsResponse(
+        min_date=min_date.date().isoformat(),
+        max_date=max_date.date().isoformat(),
+        category_large=category_large,
+        category_middle=category_middle,
+        seasons=[
+            "봄(2월1일-4월30일)",
+            "여름(5월1일-8월31일)",
+            "가을(9월1일-10월31일)",
+            "겨울(11월1일-1월31일)",
+        ],
+        hubs=hubs,
+    )
+
+
+@router.get("/overview-kpis", response_model=OverviewKpiResponse)
+def get_overview_kpis(
+    start_date: date = Query(...),
+    end_date: date = Query(...),
+    category_large: Optional[str] = Query(None),
+    category_middle: Optional[str] = Query(None),
+    season: Optional[str] = Query(None),
+    hub: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+):
+    """현황 탭 분석 조건을 적용한 매출·주문·판매수량 KPI."""
+    if start_date > end_date:
+        raise HTTPException(status_code=400, detail="시작일은 종료일보다 늦을 수 없습니다.")
+
+    totals_query = db.query(
+        func.sum(Order.total_sales),
+        func.count(func.distinct(Order.order_item_id)),
+        func.sum(Order.order_qty),
+    ).select_from(Order).filter(Order.order_status == "정상")
+    totals_query = _apply_overview_filters(
+        totals_query, start_date, end_date,
+        category_large, category_middle, season, hub, db,
+    )
+    total_sales, order_count, total_units = totals_query.one()
+    total_sales = float(total_sales or 0)
+    order_count = int(order_count or 0)
+    total_units = int(total_units or 0)
+
+    previous_query = db.query(func.sum(Order.total_sales)).select_from(Order).filter(Order.order_status == "정상")
+    previous_query = _apply_overview_filters(
+        previous_query, _previous_year(start_date), _previous_year(end_date),
+        category_large, category_middle, season, hub, db,
+    )
+    previous_sales = float(previous_query.scalar() or 0)
+    sales_change_rate = (
+        round(((total_sales - previous_sales) / previous_sales) * 100, 1)
+        if previous_sales > 0 else None
+    )
+
+    claims_query = (
+        db.query(func.sum(Claim.claim_qty))
+        .select_from(Order)
+        .join(Claim, Claim.order_item_id == Order.order_item_id)
+    )
+    claims_query = _apply_overview_filters(
+        claims_query, start_date, end_date,
+        category_large, category_middle, season, hub, db,
+    )
+    claimed_units = int(claims_query.scalar() or 0)
+    period_days = (end_date - start_date).days + 1
+
+    return OverviewKpiResponse(
+        total_sales=total_sales,
+        achievement_base_sales=total_sales,
+        order_count=order_count,
+        total_units=total_units,
+        sales_change_rate=sales_change_rate,
+        average_daily_orders=round(order_count / period_days, 1),
+        return_rate=round((claimed_units / total_units) * 100, 1) if total_units else 0,
     )
 
 @router.get("/category-sales", response_model=List[CategorySalesResponse])
