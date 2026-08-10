@@ -4,30 +4,62 @@
 #   -> charts/md_insights JSON 스키마는 원본과 100% 동일. 아래 표시된 부분만 추가/변경.
 
 import json
-from azure.core.credentials import AzureKeyCredential
-from azure.search.documents import SearchClient
-from openai import AzureOpenAI
+from openai import AzureOpenAI, OpenAI
 from app.core.config import settings
 from app.services.tools import get_kpi_and_efficiency, get_inventory_risk, get_orders_date_range
 from app.services.period_parser import parse_period, to_card_label, PERIOD_INPUT_HINT, PERIOD_EXAMPLES
 
-openai_client = AzureOpenAI(
-    azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
-    api_key=settings.AZURE_OPENAI_KEY,
-    api_version="2024-02-01"
-)
+# ============================================================
+# 26.08.10 USE_LOCAL 분기: true면 Ollama(LLM/임베딩) + Chroma(벡터검색),
+#          false면 기존 Azure OpenAI + Azure AI Search 그대로 사용.
+# ============================================================
+if settings.USE_LOCAL:
+    import chromadb
 
-search_client = SearchClient(
-    endpoint=settings.AZURE_AI_SEARCH_ENDPOINT,
-    index_name="policy-documents-index",
-    credential=AzureKeyCredential(settings.AZURE_AI_SEARCH_API_KEY)
-)
+    # Ollama는 /v1 경로에 OpenAI 호환 API(chat/completions, embeddings)를 노출함
+    llm_client = OpenAI(base_url=f"{settings.OLLAMA_BASE_URL}/v1", api_key="ollama")
+    CHAT_MODEL = settings.OLLAMA_MODEL
+
+    chroma_client = chromadb.HttpClient(host=settings.CHROMA_HOST, port=settings.CHROMA_PORT)
+    policy_collection = chroma_client.get_or_create_collection(settings.CHROMA_COLLECTION)
+else:
+    from azure.core.credentials import AzureKeyCredential
+    from azure.search.documents import SearchClient
+
+    llm_client = AzureOpenAI(
+        azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+        api_key=settings.AZURE_OPENAI_KEY,
+        api_version="2024-02-01"
+    )
+    CHAT_MODEL = settings.AZURE_DEPLOYMENT_NAME
+
+    search_client = SearchClient(
+        endpoint=settings.AZURE_AI_SEARCH_ENDPOINT,
+        index_name="policy-documents-index",
+        credential=AzureKeyCredential(settings.AZURE_AI_SEARCH_API_KEY)
+    )
+
+
+def _embed_query(query: str) -> list[float]:
+    """Ollama 임베딩 모델(예: nomic-embed-text)로 쿼리 벡터 생성 (Chroma 검색용)"""
+    response = llm_client.embeddings.create(model=settings.OLLAMA_EMBED_MODEL, input=query)
+    return response.data[0].embedding
+
 
 def retrieve_policy_docs(query: str) -> str:
-    """Azure AI Search에서 검색어와 매칭되는 정책 문서 추출"""
+    """정책 문서 검색: USE_LOCAL이면 Chroma(벡터 검색), 아니면 Azure AI Search(키워드 검색)"""
     try:
-        results = search_client.search(search_text=query, top=3)
-        chunks = [f"[{doc['related_policy']} 정책 / 담당부서: {doc['department']}]\n{doc['content']}" for doc in results]
+        if settings.USE_LOCAL:
+            results = policy_collection.query(query_embeddings=[_embed_query(query)], n_results=3)
+            metadatas = results.get("metadatas", [[]])[0]
+            documents = results.get("documents", [[]])[0]
+            chunks = [
+                f"[{meta.get('related_policy')} 정책 / 담당부서: {meta.get('department')}]\n{doc}"
+                for meta, doc in zip(metadatas, documents)
+            ]
+        else:
+            results = search_client.search(search_text=query, top=3)
+            chunks = [f"[{doc['related_policy']} 정책 / 담당부서: {doc['department']}]\n{doc['content']}" for doc in results]
         return "\n\n".join(chunks) if chunks else "관련 정책 문서 없음"
     except Exception as e:
         print(f"RAG Retrieval Error: {e}")
@@ -170,8 +202,8 @@ def generate_sales_report(user_prompt: str) -> dict:
     """
 
     try:
-        response = openai_client.chat.completions.create(
-            model=settings.AZURE_DEPLOYMENT_NAME,
+        response = llm_client.chat.completions.create(
+            model=CHAT_MODEL,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
