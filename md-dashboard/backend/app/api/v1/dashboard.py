@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import Date, func, literal_column
 from typing import List, Optional
+from app.models.goal_settings import GoalSettings
 
 from app.core.database import get_db
 from app.models.sales import Order
@@ -45,6 +46,8 @@ from app.schemas.dashboard import (
     ProductFilterOptionsResponse, #상품별 재고 탭에 사용
     TransferRecommendation, #HUBS 탭 이동 권장에 사용
     TransferRecommendationResponse, #HUBS 탭 이동 권장에 사용
+    GoalSettingsResponse, #목표값 설정
+    GoalSettingsUpdate, #목표값 설정
 )
 
 router = APIRouter()
@@ -997,3 +1000,31 @@ def get_hub_transfer_recommendation(
         ))
 
     return TransferRecommendationResponse(transfers=transfers[:result_limit])
+
+@router.get("/goal-settings", response_model=GoalSettingsResponse)
+def get_goal_settings(db: Session = Depends(get_db)):
+    """목표 매출 설정 조회 (항상 가장 최근 1행)."""
+    goal = db.query(GoalSettings).order_by(GoalSettings.id.desc()).first()
+    if not goal:
+        raise HTTPException(status_code=404, detail="목표 설정이 아직 없습니다.")
+    return goal
+
+#목표값 설정
+@router.put("/goal-settings", response_model=GoalSettingsResponse)
+def update_goal_settings(
+    payload: GoalSettingsUpdate,
+    db: Session = Depends(get_db),
+):
+    """목표 매출 설정 저장 (기존 1행을 UPDATE, 새 행 추가 아님)."""
+    goal = db.query(GoalSettings).order_by(GoalSettings.id.desc()).first()
+    if not goal:
+        raise HTTPException(status_code=404, detail="목표 설정이 아직 없습니다. 초기 데이터를 먼저 등록해주세요.")
+
+    goal.day_amount = payload.day_amount
+    goal.week_amount = payload.week_amount
+    goal.month_amount = payload.month_amount
+    goal.year_amount = payload.year_amount
+
+    db.commit()
+    db.refresh(goal)
+    return goal

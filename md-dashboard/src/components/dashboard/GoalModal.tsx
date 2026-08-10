@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export type GoalUnit = 'day' | 'week' | 'month' | 'year';
 
@@ -77,7 +78,24 @@ export default function GoalModal({ isOpen, onClose, currentGoals, currentUnit, 
           </button>
           <button
             type="button"
-            onClick={() => {
+            onClick={async () => {
+              try {
+                const res = await fetch(`${apiBaseUrl}/api/v1/dashboard/goal-settings`, {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    day_amount: goals.day,
+                    week_amount: goals.week,
+                    month_amount: goals.month,
+                    year_amount: goals.year,
+                  }),
+                });
+                if (!res.ok) throw new Error('목표 설정 저장에 실패했습니다.');
+              } catch (err) {
+                console.error('Goal settings save error:', err);
+                alert('목표 설정을 저장하지 못했습니다. 다시 시도해주세요.');
+                return;
+              }
               onSave(goals, selectedUnit);
               onClose();
             }}

@@ -389,6 +389,15 @@ const handleExcelDownload = () => {
 
               {/* 본문 대시보드 */}
               <div className="flex-1 p-6 overflow-y-auto bg-gray-50/30 space-y-6">
+                {/* 섹션 0: 조회 기간 명시 배너 */}
+                {reportData?.period_card_label && (
+                  <div className="p-4 bg-indigo-50 border-2 border-indigo-200 rounded-2xl text-center">
+                    <p className="text-lg font-extrabold text-indigo-900 tracking-tight">
+                      📅 {reportData.period_card_label}
+                    </p>
+                  </div>
+                )}
+
                 {/* 섹션 1: 백엔드 DB 결과 1:1 매핑 KPI 카드 */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div className="p-4 bg-white border border-gray-100 rounded-2xl shadow-sm">
@@ -528,7 +537,7 @@ const handleExcelDownload = () => {
                   {reportData?.disclaimer ||
                     '※ ATV/UPT는 order_id 데이터 부재로 order_item_id 단위 근사치입니다.'}
                 </span>
-                <div className="flex gap-2shrink-0 ml-4">
+                <div className="flex gap-2 shrink-0 ml-4">
                   <button
                     onClick={() => setIsModalOpen(false)}
                     className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-bold transition-colors cursor-pointer"
@@ -547,13 +556,13 @@ const handleExcelDownload = () => {
                     className="px-4 py-2 bg-[#3F4145] hover:bg-slate-700 text-white rounded-xl font-bold transition-colors shadow-sm cursor-pointer whitespace-nowrap"
                   >
                     데이터 복사
-                    <button
-                     onClick={handleExcelDownload}
-                     disabled={!reportData}
-                     className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 text-white rounded-xl font-bold transition-colors shadow-sm cursor-pointer whitespace-nowrap"
-                     >
-                      📥 엑셀 다운로드
-                      </button>
+                  </button>
+                  <button
+                    onClick={handleExcelDownload}
+                    disabled={!reportData}
+                    className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 text-white rounded-xl font-bold transition-colors shadow-sm cursor-pointer whitespace-nowrap"
+                  >
+                    📥 엑셀 다운로드
                   </button>
                 </div>
               </div>

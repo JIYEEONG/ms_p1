@@ -203,3 +203,20 @@ class TransferRecommendation(BaseModel):
 
 class TransferRecommendationResponse(BaseModel):
     transfers: List[TransferRecommendation]
+
+# --- 목표 매출 설정 (GoalModal에서 조회/저장) ---
+class GoalSettingsResponse(BaseModel):
+    day_amount: int
+    week_amount: int
+    month_amount: int
+    year_amount: int
+
+    class Config:
+        from_attributes = True
+
+
+class GoalSettingsUpdate(BaseModel):
+    day_amount: int
+    week_amount: int
+    month_amount: int
+    year_amount: int

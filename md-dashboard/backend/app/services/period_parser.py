@@ -174,32 +174,24 @@ def _month_week_range(
 ) -> tuple[date, date]:
     """
     해당 월의 N번째 주를 월요일~일요일 기준으로 계산한다.
+    "n주"는 항상 7일(월~일)이며, 월 경계를 넘어가도 자르지 않는다.
 
     예:
-        2025년 8월
-        1주 -> 8/1~8/3
+        2025년 8월 (8/1이 금요일)
+        1주 -> 7/28(월)~8/3(일)  ← 월 경계를 넘어가지만 그대로 7일 유지
         2주 -> 8/4~8/10
         3주 -> 8/11~8/17
         4주 -> 8/18~8/24
         5주 -> 8/25~8/31
-
-    월 경계를 넘지 않도록 start/end를 해당 월 안으로 보정한다.
     """
 
-    month_start, month_end = _month_range(year, month)
+    month_start, _ = _month_range(year, month)
 
     # 해당 월 1일이 속한 월~일 주간의 월요일
     first_monday = month_start - timedelta(days=month_start.weekday())
 
     start = first_monday + timedelta(days=(week_number - 1) * 7)
     end = start + timedelta(days=6)
-
-    # 월 범위를 벗어나면 해당 월 경계로 보정
-    if start < month_start:
-        start = month_start
-
-    if end > month_end:
-        end = month_end
 
     return start, end
 

@@ -63,6 +63,24 @@ export default function OverviewTab() {
       .catch((err) => console.error('Category sales fetch error:', err));
   }, [apiBaseUrl]);
 
+  // 목표 설정값을 백엔드에서 불러오기 (최초 1회)
+  useEffect(() => {
+    fetch(`${apiBaseUrl}/api/v1/dashboard/goal-settings`)
+      .then((res) => {
+        if (!res.ok) throw new Error('목표 설정을 불러오지 못했습니다.');
+        return res.json();
+      })
+      .then((data) => {
+        setGoalSettings({
+          day: data.day_amount,
+          week: data.week_amount,
+          month: data.month_amount,
+          year: data.year_amount,
+        });
+      })
+      .catch((err) => console.error('Goal settings fetch error:', err));
+  }, [apiBaseUrl]);
+
   useEffect(() => {
     if (!filters) return;
 

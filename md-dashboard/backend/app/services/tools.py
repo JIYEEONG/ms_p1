@@ -7,6 +7,7 @@
 import pyodbc
 from typing import Dict, Any, Optional
 from app.core.config import settings
+from app.models.goal_settings import GoalSettings
 
 def get_db_connection():
     conn_str = (
@@ -107,6 +108,16 @@ def get_kpi_and_efficiency(start_date: Optional[str] = None, end_date: Optional[
                 for r in reversed(trend_rows) if r.bucket
             ]
 
+        # [신규] target_rate 실계산 - GOAL_SETTINGS(연간 목표)을 기간 일수로 비례 환산해서 달성률 계산
+        period_days = None
+        if start_date and end_date:
+            fmt = "%Y-%m-%d %H:%M:%S"
+            period_days = (datetime.strptime(end_date, fmt) - datetime.strptime(start_date, fmt)).days + 1
+
+        target_amount = get_target_amount(period_days)
+        target_rate = round((revenue / target_amount) * 100, 1) if target_amount > 0 else 0.0
+        target_rate_str = f"{target_rate}%"
+
         # 디버그 로그
         print(f"\n================ [DB QUERY SUCCESS] ================")
         print(f"기간 필터: {start_date} ~ {end_date}" if start_date else "기간 필터: 없음(전체)")
@@ -114,6 +125,8 @@ def get_kpi_and_efficiency(start_date: Optional[str] = None, end_date: Optional[
         print(f"Total Qty     : {qty:,} 개")
         print(f"ASP           : {asp:,.0f} 원")
         print(f"ATV           : {atv:,.0f} 원")
+        print(f"Target Amount : {target_amount:,.0f} 원 (기간 {period_days}일 비례)" if period_days else f"Target Amount : {target_amount:,.0f} 원 (연간 전체)")
+        print(f"Target Rate   : {target_rate_str}")
         print(f"Trend Data    : {len(monthly_trend)}건")
         print(f"===================================================\n")
 
@@ -124,7 +137,7 @@ def get_kpi_and_efficiency(start_date: Optional[str] = None, end_date: Optional[
             "asp": asp,
             "atv": atv,
             "upt": upt,
-            "target_rate": "284.7%",  # TODO: 하드코딩 - 별도 개선 필요 (이번 작업 범위 아님, 확인 필요)
+            "target_rate": target_rate_str,
             "monthly_trend": monthly_trend
         }
     except Exception as e:
@@ -221,3 +234,28 @@ def get_orders_date_range() -> Dict[str, Any]:
     except Exception as e:
         print(f"\n[DB QUERY ERROR in get_orders_date_range]: {e}\n")
         return {"min_date": None, "max_date": None}
+
+#목표값 설정
+from datetime import datetime
+
+
+def get_target_amount(period_days: Optional[int] = None) -> float:
+    """
+    GOAL_SETTINGS(연간 목표)을 조회해 기간 일수에 비례한 목표금액으로 환산.
+    OverviewTab.tsx의 '년' 단위 goalAmount 계산(연 목표 × 기간일수/365)과 동일한 로직.
+    """
+    query = "SELECT TOP 1 year_amount FROM GOAL_SETTINGS ORDER BY id DESC"
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(query)
+        row = cursor.fetchone()
+        conn.close()
+        year_amount = float(row.year_amount) if row and row.year_amount else 0.0
+    except Exception as e:
+        print(f"\n[DB QUERY ERROR in get_target_amount]: {e}\n")
+        return 0.0
+
+    if not period_days:
+        return year_amount
+    return year_amount * (period_days / 365)
