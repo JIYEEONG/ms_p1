@@ -4,7 +4,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import FilterBar, { DisplayCurrency, OverviewFilters } from '../dashboard/FilterBar';
-import KpiCards, { AchievementBanner, OverviewKpiData } from '../dashboard/KpiCard';
+import { KpiCards, AchievementBanner, OverviewKpiData } from '../dashboard/KpiCard';
 import type { GoalSettings, GoalUnit } from '../dashboard/GoalModal';
 import SalesTrendChart, { SalesTrendData, SalesTrendUnit } from '../charts/SalesTrendChart';
 import SalesEfficiency from '../dashboard/SalesEfficiency';
@@ -30,7 +30,7 @@ export default function OverviewTab() {
   const [goalUnit, setGoalUnit] = useState<GoalUnit>('year');
   const [currency, setCurrency] = useState<DisplayCurrency>('KRW');
   const exchangeRate = Number(process.env.NEXT_PUBLIC_KRW_PER_USD) || 1350;
-  const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+  const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
   const handleFilterChange = useCallback((nextFilters: OverviewFilters) => {
     setKpiLoading(true);
     setKpiError('');

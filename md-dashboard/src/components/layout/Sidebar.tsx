@@ -58,8 +58,13 @@ export default function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
 // 햄버거 버튼 추가, ai챗봇 추가
 'use client';
 
+import dynamic from 'next/dynamic';
 import { DashboardView } from '@/types/dashboard';
-import AiReportChatWidget from '@/components/layout/AiReportChatWidget';
+
+const AiReportChatWidget = dynamic(() => import('@/components/layout/AiReportChatWidget'), {
+  ssr: false,
+  loading: () => <div className="h-full w-full rounded-2xl border border-white/70 bg-white/60 animate-pulse" />,
+});
 
 interface SidebarProps {
   currentView: DashboardView;

@@ -6,6 +6,32 @@ import React, { useState } from 'react';
 import GoalModal, { type GoalSettings, type GoalUnit } from './GoalModal';
 import type { DisplayCurrency } from './FilterBar';
 
+interface LegacyKpiCardProps {
+  title: string;
+  value: string;
+  desc: string;
+  type?: string;
+  borderColor?: string;
+}
+
+function LegacyKpiCard({ title, value, desc, type = 'neutral', borderColor = '#9ca3af' }: LegacyKpiCardProps) {
+  const toneClassName = {
+    danger: 'border-rose-200 bg-rose-50/80 text-rose-700',
+    warning: 'border-amber-200 bg-amber-50/80 text-amber-700',
+    info: 'border-sky-200 bg-sky-50/80 text-sky-700',
+    success: 'border-emerald-200 bg-emerald-50/80 text-emerald-700',
+    neutral: 'border-slate-200 bg-slate-50/80 text-slate-700',
+  }[type] ?? 'border-slate-200 bg-slate-50/80 text-slate-700';
+
+  return (
+    <div className={`rounded-[20px] border p-4 shadow-[0_10px_20px_-10px_rgba(160,175,200,0.18)] ${toneClassName}`} style={{ borderLeftColor: borderColor, borderLeftWidth: 4 }}>
+      <p className="text-[11px] font-black uppercase tracking-[0.24em] text-[#8A8D96]">{title}</p>
+      <p className="mt-2 text-2xl font-black text-[#3F4145]">{value}</p>
+      <p className="mt-1 text-sm text-[#65676E]">{desc}</p>
+    </div>
+  );
+}
+
 export interface OverviewKpiData {
   total_sales: number;
   achievement_base_sales: number;
@@ -51,7 +77,7 @@ export function AchievementBanner({
   );
 }
 
-export default function KpiCards({
+export function KpiCards({
   data,
   loading,
   error,
@@ -202,4 +228,8 @@ export default function KpiCards({
       )}
     </>
   );
+}
+
+export default function KpiCard(props: LegacyKpiCardProps) {
+  return <LegacyKpiCard {...props} />;
 }

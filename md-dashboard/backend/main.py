@@ -27,6 +27,7 @@ if settings.CORS_ORIGINS:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=["Content-Disposition"],
     )
 
 # API v1 라우터 등록 (/api/v1)

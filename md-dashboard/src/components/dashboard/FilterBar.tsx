@@ -2,9 +2,9 @@
 
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, type ReactNode } from 'react';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
 
 interface FilterOptions {
   min_date: string;
@@ -144,12 +144,14 @@ function SelectFilter({
 
 export default function FilterBar({
   onChange,
-  currency,
+  currency = 'KRW',
   onCurrencyChange,
+  children,
 }: {
-  onChange: (filters: OverviewFilters) => void;
-  currency: DisplayCurrency;
-  onCurrencyChange: (currency: DisplayCurrency) => void;
+  onChange?: (filters: OverviewFilters) => void;
+  currency?: DisplayCurrency;
+  onCurrencyChange?: (currency: DisplayCurrency) => void;
+  children?: ReactNode;
 }) {
   const [options, setOptions] = useState<FilterOptions | null>(null);
   const [error, setError] = useState('');
@@ -187,7 +189,7 @@ export default function FilterBar({
 
   useEffect(() => {
     if (!startDate || !endDate) return;
-    onChange({
+    onChange?.({
       startDate: toDateValue(startDate),
       endDate: toDateValue(endDate),
       categoryLarge,
@@ -253,7 +255,7 @@ export default function FilterBar({
                     type="button"
                     role="radio"
                     aria-checked={selected}
-                    onClick={() => onCurrencyChange(value)}
+                    onClick={() => onCurrencyChange?.(value)}
                     className={`flex cursor-pointer items-center justify-end gap-2 text-[11px] font-bold transition ${selected ? 'text-[#3F4145]' : 'text-[#8A8D96]'}`}
                   >
                     <span>{label}</span>
@@ -267,6 +269,12 @@ export default function FilterBar({
           </div>
         </div>
       </div>
+
+      {children ? (
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          {children}
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-1 items-stretch divide-y divide-black/10 lg:grid-cols-[2fr_1fr_1fr] lg:divide-x lg:divide-y-0">
         {/* 기간 열 */}

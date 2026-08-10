@@ -2,7 +2,7 @@
 // 26.08.05 UI 변경에 따른 파일 추가
 // 26.08.06 예측 탭 API 연동 함수 추가
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
 
 // --- 타입 정의 (백엔드 ForecastResponse와 동일하게 맞춤) ---
 export interface ForecastChartPoint {

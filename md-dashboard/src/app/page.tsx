@@ -2,14 +2,31 @@
 
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useState } from 'react';
 import Sidebar from '@/components/layout/Sidebar';
 import Header from '@/components/layout/Header';
-import OverviewTab from '@/components/tabs/OverviewTab';
-import HubInventory from '@/components/dashboard/HubInventory';
-import ProductInventory from '@/components/dashboard/ProductInventory';
-import ForecastInventory from '@/components/dashboard/ForecastInventory';
 import { DashboardView } from '@/types/dashboard';
+
+const OverviewTab = dynamic(() => import('@/components/tabs/OverviewTab').catch(() => ({ default: () => <div className="rounded-3xl border border-white/70 bg-white/60 p-6 text-sm text-slate-600">대시보드 화면을 불러오지 못했습니다.</div> })), {
+  ssr: false,
+  loading: () => <div className="h-40 rounded-3xl border border-white/70 bg-white/60 animate-pulse" />,
+});
+
+const HubInventory = dynamic(() => import('@/components/dashboard/HubInventory').catch(() => ({ default: () => <div className="rounded-3xl border border-white/70 bg-white/60 p-6 text-sm text-slate-600">HUB 재고 화면을 불러오지 못했습니다.</div> })), {
+  ssr: false,
+  loading: () => <div className="h-40 rounded-3xl border border-white/70 bg-white/60 animate-pulse" />,
+});
+
+const ProductInventory = dynamic(() => import('@/components/dashboard/ProductInventory').catch(() => ({ default: () => <div className="rounded-3xl border border-white/70 bg-white/60 p-6 text-sm text-slate-600">상품 재고 화면을 불러오지 못했습니다.</div> })), {
+  ssr: false,
+  loading: () => <div className="h-40 rounded-3xl border border-white/70 bg-white/60 animate-pulse" />,
+});
+
+const ForecastInventory = dynamic(() => import('@/components/dashboard/ForecastInventory').catch(() => ({ default: () => <div className="rounded-3xl border border-white/70 bg-white/60 p-6 text-sm text-slate-600">예측 화면을 불러오지 못했습니다.</div> })), {
+  ssr: false,
+  loading: () => <div className="h-40 rounded-3xl border border-white/70 bg-white/60 animate-pulse" />,
+});
 
 export default function Home() {
   const [currentView, setCurrentView] = useState<DashboardView>('overview');

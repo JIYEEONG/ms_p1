@@ -259,3 +259,218 @@ def get_target_amount(period_days: Optional[int] = None) -> float:
     if not period_days:
         return year_amount
     return year_amount * (period_days / 365)
+
+# ============================================================
+# [신규] 엑셀 상세 리포트용 함수들
+# app/services/tools.py 맨 아래에 그대로 추가하세요.
+# 기존 함수(get_db_connection, get_kpi_and_efficiency, get_inventory_risk,
+# get_orders_date_range)는 전혀 건드리지 않습니다 - 이 블록만 파일 끝에 추가.
+#
+# 중요: 아래 쿼리들은 order_status 필터를 걸지 않습니다 (전체 상태 포함:
+# 정상/취소/반품/교환) - "반품 교환까지 포함한 모든 판매데이터" 요구사항 반영.
+# 이는 기존 get_kpi_and_efficiency도 원래 status 필터가 없었던 것과 일관됨.
+# ============================================================
+
+from typing import List
+
+
+def get_category_performance(start_date: str, end_date: str, level: str = "large", top_n: int = 5) -> List[Dict[str, Any]]:
+    """대분류/중분류별 판매금액 Top N (level: 'large' 또는 'middle')"""
+    col = "category_large" if level == "large" else "category_middle"
+    query = f"""
+        SELECT TOP {top_n}
+            p.{col} AS category_name,
+            ISNULL(SUM(CAST(ISNULL(o.selling_price, 0) AS BIGINT) * CAST(ISNULL(o.order_qty, 0) AS BIGINT)), 0) AS sales_amount
+        FROM ORDERS o
+        INNER JOIN PRODUCT_SKU p ON o.sku_id = p.sku_id
+        WHERE o.order_datetime BETWEEN ? AND ?
+        GROUP BY p.{col}
+        ORDER BY sales_amount DESC
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(query, [start_date, end_date])
+        rows = cursor.fetchall()
+        conn.close()
+        return [
+            {"rank": i + 1, "name": str(r.category_name), "sales_amount": int(r.sales_amount or 0)}
+            for i, r in enumerate(rows)
+        ]
+    except Exception as e:
+        print(f"\n[DB QUERY ERROR in get_category_performance]: {e}\n")
+        return []
+
+
+def get_best10(start_date: str, end_date: str) -> List[Dict[str, Any]]:
+    """판매금액 기준 베스트10 SKU - 가용재고/판매율/클레임 포함"""
+    query = """
+        SELECT TOP 10
+            o.sku_id,
+            p.category_large, p.category_middle, p.product_name,
+            SUM(CAST(ISNULL(o.selling_price, 0) AS BIGINT) * CAST(ISNULL(o.order_qty, 0) AS BIGINT)) AS sales_amount,
+            SUM(o.order_qty) AS sold_qty
+        FROM ORDERS o
+        INNER JOIN PRODUCT_SKU p ON o.sku_id = p.sku_id
+        WHERE o.order_datetime BETWEEN ? AND ?
+        GROUP BY o.sku_id, p.category_large, p.category_middle, p.product_name
+        ORDER BY sales_amount DESC
+    """
+    as_of_date = end_date.split(" ")[0]
+
+    stock_query = """
+        SELECT sku_id, SUM(available_qty) AS available_qty
+        FROM INVENTORY
+        WHERE snapshot_date = (SELECT MAX(snapshot_date) FROM INVENTORY WHERE snapshot_date <= ?)
+        GROUP BY sku_id
+    """
+    claims_query = """
+        SELECT o.sku_id, COUNT(*) AS claim_cnt
+        FROM CLAIMS c
+        INNER JOIN ORDERS o ON c.order_item_id = o.order_item_id
+        WHERE c.claim_datetime BETWEEN ? AND ?
+        GROUP BY o.sku_id
+    """
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(query, [start_date, end_date])
+        rows = cursor.fetchall()
+
+        cursor.execute(stock_query, [as_of_date])
+        stock_map = {r.sku_id: int(r.available_qty or 0) for r in cursor.fetchall()}
+
+        cursor.execute(claims_query, [start_date, end_date])
+        claim_map = {r.sku_id: int(r.claim_cnt or 0) for r in cursor.fetchall()}
+
+        conn.close()
+
+        results = []
+        for i, r in enumerate(rows):
+            sold_qty = int(r.sold_qty or 0)
+            available = stock_map.get(r.sku_id, 0)
+            denom = sold_qty + available
+            sell_through = round(sold_qty / denom, 2) if denom > 0 else 0.0
+            results.append({
+                "rank": i + 1,
+                "sku": r.sku_id,
+                "category_large": str(r.category_large or ""),
+                "category_mid": str(r.category_middle or ""),
+                "item_name": str(r.product_name or ""),
+                "available_stock": available,
+                "sell_through_rate": sell_through,
+                "claims": claim_map.get(r.sku_id, 0),
+            })
+        return results
+    except Exception as e:
+        print(f"\n[DB QUERY ERROR in get_best10]: {e}\n")
+        return []
+
+
+def get_item_level_detail(start_date: str, end_date: str) -> List[Dict[str, Any]]:
+    """
+    해당기간/비교기간 판매 상세 시트용 - 판매된 SKU 전체 (Top N 아님, 전체).
+    ⚠ order_status 필터 없음 -> 정상/취소/반품/교환 모두 포함된 합산 금액.
+    """
+    query = """
+        SELECT
+            o.sku_id,
+            p.category_large, p.category_middle, p.product_name,
+            MAX(o.normal_price) AS regular_price,
+            SUM(CAST(ISNULL(o.selling_price, 0) AS BIGINT) * CAST(ISNULL(o.order_qty, 0) AS BIGINT)) AS sales_amount,
+            SUM(o.order_qty) AS sold_qty
+        FROM ORDERS o
+        INNER JOIN PRODUCT_SKU p ON o.sku_id = p.sku_id
+        WHERE o.order_datetime BETWEEN ? AND ?
+        GROUP BY o.sku_id, p.category_large, p.category_middle, p.product_name
+        ORDER BY sales_amount DESC
+    """
+    as_of_date = end_date.split(" ")[0]
+
+    stock_query = """
+        SELECT sku_id, SUM(available_qty) AS available_qty
+        FROM INVENTORY
+        WHERE snapshot_date = (SELECT MAX(snapshot_date) FROM INVENTORY WHERE snapshot_date <= ?)
+        GROUP BY sku_id
+    """
+    claims_query = """
+        SELECT o.sku_id, COUNT(*) AS claim_cnt
+        FROM CLAIMS c
+        INNER JOIN ORDERS o ON c.order_item_id = o.order_item_id
+        WHERE c.claim_datetime BETWEEN ? AND ?
+        GROUP BY o.sku_id
+    """
+    arrival_query = """
+        SELECT sku_id, MIN(expected_arrival_date) AS next_arrival
+        FROM PURCHASE_ORDERS
+        WHERE actual_arrival_date IS NULL AND expected_arrival_date >= ?
+        GROUP BY sku_id
+    """
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(query, [start_date, end_date])
+        rows = cursor.fetchall()
+
+        cursor.execute(stock_query, [as_of_date])
+        stock_map = {r.sku_id: int(r.available_qty or 0) for r in cursor.fetchall()}
+
+        cursor.execute(claims_query, [start_date, end_date])
+        claim_map = {r.sku_id: int(r.claim_cnt or 0) for r in cursor.fetchall()}
+
+        cursor.execute(arrival_query, [as_of_date])
+        arrival_map = {r.sku_id: r.next_arrival.isoformat() if r.next_arrival else "" for r in cursor.fetchall()}
+
+        conn.close()
+
+        results = []
+        for i, r in enumerate(rows):
+            sold_qty = int(r.sold_qty or 0)
+            available = stock_map.get(r.sku_id, 0)
+            denom = sold_qty + available
+            sell_through = round(sold_qty / denom, 2) if denom > 0 else 0.0
+            results.append({
+                "rank": i + 1,
+                "sku": r.sku_id,
+                "category_large": str(r.category_large or ""),
+                "category_mid": str(r.category_middle or ""),
+                "item_name": str(r.product_name or ""),
+                "regular_price": int(r.regular_price or 0),
+                "sales_amount": int(r.sales_amount or 0),
+                "available_stock": available,
+                "sell_through_rate": sell_through,
+                "claims": claim_map.get(r.sku_id, 0),
+                "expected_arrival_date": arrival_map.get(r.sku_id, ""),
+            })
+        return results
+    except Exception as e:
+        print(f"\n[DB QUERY ERROR in get_item_level_detail]: {e}\n")
+        return []
+
+
+def get_daily_trend(start_date: str, end_date: str) -> List[Dict[str, Any]]:
+    """일별 총매출 추이 (엑셀 이중꺾은선 차트용 원자료 - 일 단위로만 조회하고,
+    주/월 단위로 묶는 건 Python 쪽(excel_report_builder.py)에서 처리)"""
+    query = """
+        SELECT
+            CAST(order_datetime AS date) AS day,
+            SUM(CAST(ISNULL(selling_price, 0) AS BIGINT) * CAST(ISNULL(order_qty, 0) AS BIGINT)) AS revenue
+        FROM ORDERS
+        WHERE order_datetime BETWEEN ? AND ?
+        GROUP BY CAST(order_datetime AS date)
+        ORDER BY day ASC
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(query, [start_date, end_date])
+        rows = cursor.fetchall()
+        conn.close()
+        return [{"date": r.day.isoformat(), "revenue": int(r.revenue or 0)} for r in rows]
+    except Exception as e:
+        print(f"\n[DB QUERY ERROR in get_daily_trend]: {e}\n")
+        return []

@@ -4,7 +4,6 @@
 
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import * as XLSX from 'xlsx';
 import {
   ResponsiveContainer,
   BarChart,
@@ -18,10 +17,44 @@ import {
   Legend,
 } from 'recharts';
 
+interface ReportSummaryKpi {
+  target_rate?: string | number;
+  total_sales?: string | number;
+  asp?: string | number;
+  atv?: string | number;
+}
+
+interface ReportChart {
+  id?: string | number;
+  title?: string;
+  type?: string;
+  data?: Array<Record<string, unknown>>;
+}
+
+interface ReportActionPlan {
+  team?: string;
+  action?: string;
+  [key: string]: unknown;
+}
+
+interface ReportData {
+  period_card_label?: string;
+  period_meta?: Record<string, unknown>;
+  summary_kpi?: ReportSummaryKpi;
+  charts?: ReportChart[];
+  md_insights?: {
+    sales_analysis?: string;
+    inventory_risk?: string;
+    action_plans?: ReportActionPlan[];
+  };
+  disclaimer?: string;
+  [key: string]: unknown;
+}
+
 export default function AiReportChatWidget() {
   const [prompt, setPrompt] = useState('');
   const [loading, setLoading] = useState(false);
-  const [reportData, setReportData] = useState<any>(null);
+  const [reportData, setReportData] = useState<ReportData | null>(null);
   const [chatMessage, setChatMessage] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -29,231 +62,86 @@ export default function AiReportChatWidget() {
   useEffect(() => {
     setMounted(true);
   }, []);
-const handleExcelDownload = () => {
+// AiReportChatWidget.tsx 안의 기존 handleExcelDownload 함수를 통째로 이걸로 교체하세요.
+// 상단의 `import * as XLSX from 'xlsx';` 줄은 이제 필요 없으면 지워도 됩니다
+// (다른 곳에서 안 쓰면 지우세요 - 쓰고 있으면 그대로 두세요).
+
+// AiReportChatWidget.tsx 안의 handleExcelDownload 함수를 이걸로 교체하세요.
+// 변경점: Content-Disposition 헤더에서 파일명을 뽑는 로직을 강화.
+//   - 한글 파일명은 서버가 filename*=UTF-8''%EC%A3%BC%EA%B0%84... 형태로 보내는데,
+//     기존 정규식은 이 형태를 못 잡아서 항상 기본값(AI_판매리포트.xlsx)으로 빠졌음.
+
+const extractFileName = (disposition: string): string => {
+  if (!disposition) return 'AI_판매리포트.xlsx';
+
+  // 1순위: filename*=UTF-8''퍼센트인코딩된값 (한글 파일명은 보통 이 형태)
+  const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match) {
+    try {
+      return decodeURIComponent(utf8Match[1]);
+    } catch {
+      // decode 실패 시 2순위로 폴백
+    }
+  }
+
+  // 2순위: filename="..." (따옴표 있는 일반 형태)
+  const quotedMatch = disposition.match(/filename="([^"]+)"/i);
+  if (quotedMatch) {
+    try {
+      return decodeURIComponent(quotedMatch[1]);
+    } catch {
+      return quotedMatch[1];
+    }
+  }
+
+  // 3순위: filename=... (따옴표 없는 형태)
+  const plainMatch = disposition.match(/filename=([^;]+)/i);
+  if (plainMatch) {
+    return plainMatch[1].trim();
+  }
+
+  return 'AI_판매리포트.xlsx';
+};
+
+const handleExcelDownload = async () => {
   if (!reportData) {
     alert('다운로드할 리포트 데이터가 없습니다.');
     return;
   }
+  if (!reportData.period_meta) {
+    alert('기간 정보가 없어 엑셀을 생성할 수 없습니다. 리포트를 다시 생성해주세요.');
+    return;
+  }
 
   try {
-    const workbook = XLSX.utils.book_new();
-
-    // =====================================================
-    // 1. 요약 KPI
-    // =====================================================
-    const kpiData = [
-      ['AI 판매현황 리포트'],
-      [],
-      ['항목', '값'],
-      [
-        '기간',
-        reportData.period_card_label ||
-          reportData.display_label ||
-          '',
-      ],
-      [
-        '목표 달성률',
-        reportData.summary_kpi?.target_rate || '0.0%',
-      ],
-      [
-        '총 매출액',
-        reportData.summary_kpi?.total_sales || 0,
-      ],
-      [
-        '평균 판매단가 (ASP)',
-        reportData.summary_kpi?.asp || 0,
-      ],
-      [
-        '객단가 (ATV)',
-        reportData.summary_kpi?.atv || 0,
-      ],
-    ];
-
-    const kpiSheet = XLSX.utils.aoa_to_sheet(kpiData);
-
-    kpiSheet['!cols'] = [
-      { wch: 25 },
-      { wch: 35 },
-    ];
-
-    XLSX.utils.book_append_sheet(
-      workbook,
-      kpiSheet,
-      '요약 KPI'
-    );
-
-    // =====================================================
-    // 2. 차트 데이터
-    // =====================================================
-    (reportData.charts || []).forEach(
-      (chart: any, chartIndex: number) => {
-        if (!chart.data || !Array.isArray(chart.data)) {
-          return;
-        }
-
-        const chartSheetData = [
-          [chart.title || `차트 ${chartIndex + 1}`],
-          [],
-        ];
-
-        if (chart.data.length > 0) {
-          const keys = Object.keys(chart.data[0]);
-
-          chartSheetData.push(keys);
-
-          chart.data.forEach((row: any) => {
-            chartSheetData.push(
-              keys.map((key) => row[key])
-            );
-          });
-        }
-
-        const chartSheet = XLSX.utils.aoa_to_sheet(
-          chartSheetData
-        );
-
-        chartSheet['!cols'] = [
-          { wch: 20 },
-          { wch: 18 },
-          { wch: 18 },
-          { wch: 18 },
-        ];
-
-        // Excel 시트 이름은 최대 31자
-        let sheetName =
-          chart.title ||
-          `차트${chartIndex + 1}`;
-
-        sheetName = sheetName
-          .replace(/[\\\/\?\*\[\]\:]/g, '')
-          .substring(0, 31);
-
-        // 같은 이름 방지
-        if (!sheetName) {
-          sheetName = `차트${chartIndex + 1}`;
-        }
-
-        XLSX.utils.book_append_sheet(
-          workbook,
-          chartSheet,
-          sheetName
-        );
-      }
-    );
-
-    // =====================================================
-    // 3. MD 진단
-    // =====================================================
-    const insightData = [
-      ['MD 진단 리포트'],
-      [],
-      ['구분', '내용'],
-      [
-        '실적 및 효율 지표 분석',
-        reportData.md_insights?.sales_analysis || '',
-      ],
-      [
-        '재고 리스크 진단',
-        reportData.md_insights?.inventory_risk || '',
-      ],
-    ];
-
-    const insightSheet =
-      XLSX.utils.aoa_to_sheet(insightData);
-
-    insightSheet['!cols'] = [
-      { wch: 30 },
-      { wch: 100 },
-    ];
-
-    XLSX.utils.book_append_sheet(
-      workbook,
-      insightSheet,
-      'MD 진단'
-    );
-
-    // =====================================================
-    // 4. 부서별 액션 플랜
-    // =====================================================
-    const actionData = [
-      ['부서별 제안 액션 플랜'],
-      [],
-      ['부서', '실행 전략'],
-    ];
-
-    (
-      reportData.md_insights?.action_plans || []
-    ).forEach((plan: any) => {
-      actionData.push([
-        plan.team || '',
-        plan.action || '',
-      ]);
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001'}/api/v1/reports/export-excel`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ period_meta: reportData.period_meta }),
     });
 
-    const actionSheet =
-      XLSX.utils.aoa_to_sheet(actionData);
+    if (!res.ok) {
+      throw new Error(`HTTP Error! Status: ${res.status}`);
+    }
 
-    actionSheet['!cols'] = [
-      { wch: 20 },
-      { wch: 100 },
-    ];
+    const disposition = res.headers.get('Content-Disposition') || '';
+    const fileName = extractFileName(disposition);
 
-    XLSX.utils.book_append_sheet(
-      workbook,
-      actionSheet,
-      '액션 플랜'
-    );
+    // 디버그용 - 정상 확인되면 이 줄은 지워도 됩니다
+    console.log('Content-Disposition:', disposition, '-> 추출된 파일명:', fileName);
 
-    // =====================================================
-    // 5. 전체 JSON 원본 데이터
-    // =====================================================
-    const jsonData = [
-      ['리포트 원본 JSON'],
-      [],
-      [JSON.stringify(reportData, null, 2)],
-    ];
-
-    const jsonSheet =
-      XLSX.utils.aoa_to_sheet(jsonData);
-
-    jsonSheet['!cols'] = [
-      { wch: 120 },
-    ];
-
-    XLSX.utils.book_append_sheet(
-      workbook,
-      jsonSheet,
-      '원본 데이터'
-    );
-
-    // =====================================================
-    // 6. 파일명
-    // =====================================================
-    const period =
-      reportData.period_card_label ||
-      reportData.display_label ||
-      'AI_리포트';
-
-    const safePeriod = period
-      .replace(/[\\\/:*?"<>|]/g, '_')
-      .replace(/\s+/g, '_');
-
-    const fileName = `AI_판매리포트_${safePeriod}.xlsx`;
-
-    // =====================================================
-    // 7. 다운로드
-    // =====================================================
-    XLSX.writeFile(workbook, fileName);
-
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
   } catch (error) {
-    console.error(
-      '❌ Excel Download Error:',
-      error
-    );
-
-    alert(
-      '엑셀 파일 생성 중 오류가 발생했습니다.'
-    );
+    console.error('❌ Excel Download Error:', error);
+    alert('엑셀 파일 생성 중 오류가 발생했습니다. 백엔드 서버 상태를 확인해주세요.');
   }
 };
   const handleGenerate = async (e?: React.FormEvent) => {
@@ -263,7 +151,7 @@ const handleExcelDownload = () => {
     setLoading(true);
 
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/v1/reports/generate', {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001'}/api/v1/reports/generate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -305,14 +193,14 @@ const handleExcelDownload = () => {
     }
   };
 
-  const getKeys = (dataList: any[]) => {
+  const getKeys = (dataList: Array<Record<string, unknown>> | undefined) => {
     if (!dataList || dataList.length === 0) return [];
     return Object.keys(dataList[0]).filter((key) => key !== 'name');
   };
 
   const colors = ['#2563eb', '#8b5cf6', '#3f4145', '#10b981', '#f59e0b'];
 
-  const displayCharts = reportData?.charts || [];
+  const displayCharts = Array.isArray(reportData?.charts) ? reportData.charts : [];
 
   return (
     <>
@@ -403,45 +291,48 @@ const handleExcelDownload = () => {
                   <div className="p-4 bg-white border border-gray-100 rounded-2xl shadow-sm">
                     <p className="text-[11px] text-gray-500 font-semibold mb-1">목표 달성률</p>
                     <p className="text-xl font-extrabold text-blue-600">
-                      {reportData?.summary_kpi?.target_rate || '0.0%'}
+                      {typeof reportData?.summary_kpi?.target_rate === 'number'
+                        ? `${reportData.summary_kpi.target_rate}%`
+                        : reportData?.summary_kpi?.target_rate ?? '0.0%'}
                     </p>
                   </div>
                   <div className="p-4 bg-white border border-gray-100 rounded-2xl shadow-sm">
                     <p className="text-[11px] text-gray-500 font-semibold mb-1">총 매출액</p>
                     <p className="text-xl font-extrabold text-slate-800">
-                      {`${Number(reportData?.summary_kpi?.total_sales || 0).toLocaleString()} 원`}
+                      {`${Number(reportData?.summary_kpi?.total_sales ?? 0).toLocaleString()} 원`}
                     </p>
                   </div>
                   <div className="p-4 bg-white border border-gray-100 rounded-2xl shadow-sm">
                     <p className="text-[11px] text-gray-500 font-semibold mb-1">평균 판매단가 (ASP)</p>
                     <p className="text-xl font-extrabold text-slate-800">
-                      {`${Number(reportData?.summary_kpi?.asp || 0).toLocaleString()} 원`}
+                      {`${Number(reportData?.summary_kpi?.asp ?? 0).toLocaleString()} 원`}
                     </p>
                   </div>
                   <div className="p-4 bg-white border border-gray-100 rounded-2xl shadow-sm">
                     <p className="text-[11px] text-gray-500 font-semibold mb-1">객단가 (ATV)</p>
                     <p className="text-xl font-extrabold text-purple-600">
-                      {`${Number(reportData?.summary_kpi?.atv || 0).toLocaleString()} 원`}
+                      {`${Number(reportData?.summary_kpi?.atv ?? 0).toLocaleString()} 원`}
                     </p>
                   </div>
                 </div>
 
                 {/* 섹션 2: 시각화 차트 그리드 */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {displayCharts.map((chart: any, idx: number) => {
-                    const dataKeys = getKeys(chart.data);
+                  {displayCharts.map((chart: ReportChart, idx: number) => {
+                    const chartData = chart.data ?? [];
+                    const dataKeys = getKeys(chartData);
                     return (
                       <div
-                        key={chart.id || idx}
+                        key={chart.id ?? idx}
                         className="p-5 bg-white border border-gray-100 rounded-2xl shadow-sm flex flex-col"
                       >
                         <h4 className="text-xs font-bold text-[#3F4145] mb-4 flex items-center gap-1.5">
-                          <span>📈</span> {chart.title}
+                          <span>📈</span> {chart.title ?? `차트 ${idx + 1}`}
                         </h4>
                         <div className="w-full h-[220px] min-h-[220px]">
                           <ResponsiveContainer width="100%" height="100%">
                             {chart.type === 'line' ? (
-                              <LineChart data={chart.data}>
+                              <LineChart data={chartData}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                                 <XAxis dataKey="name" stroke="#888888" fontSize={10} />
                                 <YAxis stroke="#888888" fontSize={10} domain={['auto', 'auto']} />
@@ -459,7 +350,7 @@ const handleExcelDownload = () => {
                                 ))}
                               </LineChart>
                             ) : (
-                              <BarChart data={chart.data}>
+                              <BarChart data={chartData}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                                 <XAxis dataKey="name" stroke="#888888" fontSize={10} />
                                 <YAxis stroke="#888888" fontSize={10} />
@@ -513,13 +404,13 @@ const handleExcelDownload = () => {
                       <span>🚀</span> 부서별 제안 액션 플랜
                     </h5>
                     <div className="flex flex-col gap-2.5">
-                      {(reportData?.md_insights?.action_plans || []).map((plan: any, idx: number) => (
+                      {(reportData?.md_insights?.action_plans || []).map((plan: ReportActionPlan, idx: number) => (
                         <div
                           key={idx}
                           className="p-3.5 bg-blue-50/40 border border-blue-100 rounded-xl flex items-start gap-3"
                         >
                           <span className="text-[11px] font-bold text-blue-600 bg-blue-100 px-2.5 py-1 rounded-lg shrink-0">
-                            [{plan.team}]
+                            [{plan.team ?? `팀 ${idx + 1}`}]
                           </span>
                           <p className="text-xs text-gray-800 font-medium leading-relaxed pt-0.5">
                             {plan.action}

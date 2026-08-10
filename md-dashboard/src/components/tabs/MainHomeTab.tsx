@@ -11,7 +11,7 @@ export default function MainHomeTab() {
 
   useEffect(() => {
     // 1. KPI 데이터 호출
-    fetch("http://localhost:8000/api/v1/dashboard/kpi")
+    fetch("http://localhost:8001/api/v1/dashboard/kpi")
       .then((res) => res.json())
       .then((data) => {
         if (data.status === "success") setKpi(data.data);
@@ -19,7 +19,7 @@ export default function MainHomeTab() {
       .catch((err) => console.error("KPI 연동 에러:", err));
 
     // 2. 카테고리 매출 데이터 호출
-    fetch("http://localhost:8000/api/v1/dashboard/category-sales")
+    fetch("http://localhost:8001/api/v1/dashboard/category-sales")
       .then((res) => res.json())
       .then((data) => {
         if (data.status === "success") setCategorySales(data.data);
