@@ -1,36 +1,47 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# MD Dashboard
 
-## Getting Started
+패션 MD(상품 기획자)를 위한 재고/매출/AI 리포트 대시보드입니다. Next.js 프론트엔드와 FastAPI 백엔드(`backend/`)로 구성됩니다.
 
-First, run the development server:
+> 이 저장소의 최신 작업 폴더 구조(프론트/백엔드 분리, 워크스페이스 실행법)는 `md_dashboard` 워크스페이스 루트의 README를 함께 참고하세요.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## 주요 기능
+- 상품별/HUB별 재고 현황 및 위험도(WOS, 무판매 기간 기준) 분석
+- 매출/카테고리별 판매 현황 대시보드
+- Azure OpenAI + Azure AI Search 기반 AI 리포트(RAG) 생성 및 액션플랜 제안
+- AI 리포트 엑셀 다운로드 (`openpyxl` 기반)
+- 날씨 기반 수요 예측(Forecast) 탭
+
+## 폴더 구조
+```
+md-dashboard/
+├── src/            Next.js 프론트엔드 소스
+├── public/         정적 파일
+└── backend/        FastAPI 백엔드 (app/api, app/models, app/services 등)
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 실행 방법
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 프론트엔드 (기본 포트 3000)
+```bash
+npm install
+npm run dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 백엔드 (기본 포트 8001)
+```bash
+cd backend
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+python -m uvicorn main:app --reload --port 8001
+```
 
-## Learn More
+백엔드 실행에는 `.env` (Azure SQL DB, Azure OpenAI, Azure AI Search 접속 정보)가 필요합니다. API 문서는 `http://localhost:8001/docs`.
 
-To learn more about Next.js, take a look at the following resources:
+프론트엔드는 `.env.local`의 `NEXT_PUBLIC_API_URL`(기본값 `http://localhost:8001`)로 백엔드에 연결합니다.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## 빌드
+```bash
+npm run build
+npm run lint
+```
