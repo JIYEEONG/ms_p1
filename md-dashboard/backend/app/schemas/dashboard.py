@@ -220,3 +220,12 @@ class GoalSettingsUpdate(BaseModel):
     week_amount: int
     month_amount: int
     year_amount: int
+
+# --- 역할별 접근 인증 ---
+class AuthRequest(BaseModel):
+    password: str
+
+
+class AuthResponse(BaseModel):
+    role: str  # "ceo" | "md" | "stock" | ""
+    success: bool

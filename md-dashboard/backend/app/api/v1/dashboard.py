@@ -17,6 +17,7 @@ from typing import List, Optional
 from app.models.goal_settings import GoalSettings
 
 from app.core.database import get_db
+from app.core.config import settings
 from app.models.sales import Order
 from app.models.product import Product, ProductSku
 from app.models.inventory import Inventory
@@ -48,6 +49,8 @@ from app.schemas.dashboard import (
     TransferRecommendationResponse, #HUBS 탭 이동 권장에 사용
     GoalSettingsResponse, #목표값 설정
     GoalSettingsUpdate, #목표값 설정
+    AuthRequest, #역할별 접근 인증
+    AuthResponse, #역할별 접근 인증
 )
 
 router = APIRouter()
@@ -1028,3 +1031,14 @@ def update_goal_settings(
     db.commit()
     db.refresh(goal)
     return goal
+
+@router.post("/auth", response_model=AuthResponse)
+def check_role_password(payload: AuthRequest):
+    """입력한 비밀번호에 따라 역할(CEO/MD/재고담당자)을 판별."""
+    if payload.password == settings.ROLE_CEO_PASSWORD and settings.ROLE_CEO_PASSWORD:
+        return AuthResponse(role="ceo", success=True)
+    if payload.password == settings.ROLE_MD_PASSWORD and settings.ROLE_MD_PASSWORD:
+        return AuthResponse(role="md", success=True)
+    if payload.password == settings.ROLE_STOCK_PASSWORD and settings.ROLE_STOCK_PASSWORD:
+        return AuthResponse(role="stock", success=True)
+    return AuthResponse(role="", success=False)

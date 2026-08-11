@@ -49,6 +49,11 @@ class Settings(BaseSettings):
     CHROMA_PORT: int = 8000
     CHROMA_COLLECTION: str = "policy-documents"
 
+    # 역할별 접근 비밀번호 (CEO/MD/재고담당자)
+    ROLE_CEO_PASSWORD: str = "1234"
+    ROLE_MD_PASSWORD: str = "0000"
+    ROLE_STOCK_PASSWORD: str = "5678"
+
     @model_validator(mode="after")
     def _check_azure_settings_present(self) -> "Settings":
         if not self.USE_LOCAL:

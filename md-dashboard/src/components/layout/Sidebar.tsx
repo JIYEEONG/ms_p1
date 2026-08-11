@@ -71,9 +71,11 @@ interface SidebarProps {
   onViewChange: (view: DashboardView) => void;
   isOpen: boolean;
   onToggle: () => void;
+  allowedViews?: DashboardView[];
 }
 
-export default function Sidebar({ currentView, onViewChange, isOpen, onToggle }: SidebarProps) {
+export default function Sidebar({ currentView, onViewChange, isOpen, onToggle, allowedViews }: SidebarProps) {
+  const canShow = (view: DashboardView) => !allowedViews || allowedViews.includes(view);
   // 닫혀있을 때: 입체감이 적용된 단독 햄버거 버튼
   if (!isOpen) {
     return (
@@ -101,7 +103,7 @@ export default function Sidebar({ currentView, onViewChange, isOpen, onToggle }:
                 MD
               </div>
               <div className="min-w-0">
-                <h1 className="font-extrabold text-sm leading-tight text-[#3F4145] truncate">Inventory Lens</h1>
+                <h1 className="font-extrabold text-sm leading-tight text-[#3F4145] truncate">ZERO</h1>
                 <p className="text-[10px] text-[#8A8D96] truncate mt-0.5">판매·재고 의사결정 대시보드</p>
               </div>
             </div>
@@ -120,46 +122,54 @@ export default function Sidebar({ currentView, onViewChange, isOpen, onToggle }:
 
           {/* 네비게이션 탭 메뉴 */}
           <nav className="space-y-2.5">
-            <button
-              onClick={() => onViewChange('overview')}
-              className={`w-full text-left px-4 py-3.5 rounded-2xl text-xs font-bold transition-all ${
-                currentView === 'overview'
-                  ? 'bg-white text-[#3F4145] shadow-[0_10px_20px_-5px_rgba(140,150,170,0.2)] border border-white'
-                  : 'text-[#8A8D96] hover:bg-white/40 hover:text-[#3F4145]'
-              }`}
-            >
-              매출 현황
-            </button>
-            <button
-              onClick={() => onViewChange('hub')}
-              className={`w-full text-left px-4 py-3.5 rounded-2xl text-xs font-bold transition-all ${
-                currentView === 'hub'
-                  ? 'bg-white text-[#3F4145] shadow-[0_10px_20px_-5px_rgba(140,150,170,0.2)] border border-white'
-                  : 'text-[#8A8D96] hover:bg-white/40 hover:text-[#3F4145]'
-              }`}
-            >
-              HUB별 재고
-            </button>
-            <button
-              onClick={() => onViewChange('product')}
-              className={`w-full text-left px-4 py-3.5 rounded-2xl text-xs font-bold transition-all ${
-                currentView === 'product'
-                  ? 'bg-white text-[#3F4145] shadow-[0_10px_20px_-5px_rgba(140,150,170,0.2)] border border-white'
-                  : 'text-[#8A8D96] hover:bg-white/40 hover:text-[#3F4145]'
-              }`}
-            >
-              상품별 재고
-            </button>
-            <button
-              onClick={() => onViewChange('forecast')}
-              className={`w-full text-left px-4 py-3.5 rounded-2xl text-xs font-bold transition-all ${
-                currentView === 'forecast'
-                  ? 'bg-white text-[#3F4145] shadow-[0_10px_20px_-5px_rgba(140,150,170,0.2)] border border-white'
-                  : 'text-[#8A8D96] hover:bg-white/40 hover:text-[#3F4145]'
-              }`}
-            >
-              예측
-            </button>
+            {canShow('overview') && (
+              <button
+                onClick={() => onViewChange('overview')}
+                className={`w-full text-left px-4 py-3.5 rounded-2xl text-xs font-bold transition-all ${
+                  currentView === 'overview'
+                    ? 'bg-white text-[#3F4145] shadow-[0_10px_20px_-5px_rgba(140,150,170,0.2)] border border-white'
+                    : 'text-[#8A8D96] hover:bg-white/40 hover:text-[#3F4145]'
+                }`}
+              >
+                매출 현황
+              </button>
+            )}
+            {canShow('hub') && (
+              <button
+                onClick={() => onViewChange('hub')}
+                className={`w-full text-left px-4 py-3.5 rounded-2xl text-xs font-bold transition-all ${
+                  currentView === 'hub'
+                    ? 'bg-white text-[#3F4145] shadow-[0_10px_20px_-5px_rgba(140,150,170,0.2)] border border-white'
+                    : 'text-[#8A8D96] hover:bg-white/40 hover:text-[#3F4145]'
+                }`}
+              >
+                HUB별 재고
+              </button>
+            )}
+            {canShow('product') && (
+              <button
+                onClick={() => onViewChange('product')}
+                className={`w-full text-left px-4 py-3.5 rounded-2xl text-xs font-bold transition-all ${
+                  currentView === 'product'
+                    ? 'bg-white text-[#3F4145] shadow-[0_10px_20px_-5px_rgba(140,150,170,0.2)] border border-white'
+                    : 'text-[#8A8D96] hover:bg-white/40 hover:text-[#3F4145]'
+                }`}
+              >
+                상품별 재고
+              </button>
+            )}
+            {canShow('forecast') && (
+              <button
+                onClick={() => onViewChange('forecast')}
+                className={`w-full text-left px-4 py-3.5 rounded-2xl text-xs font-bold transition-all ${
+                  currentView === 'forecast'
+                    ? 'bg-white text-[#3F4145] shadow-[0_10px_20px_-5px_rgba(140,150,170,0.2)] border border-white'
+                    : 'text-[#8A8D96] hover:bg-white/40 hover:text-[#3F4145]'
+                }`}
+              >
+                예측
+              </button>
+            )}
           </nav>
         </div>
 
