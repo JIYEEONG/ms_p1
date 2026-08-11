@@ -424,10 +424,15 @@ const handleExcelDownload = async () => {
 
               {/* 푸터 */}
               <div className="px-8 py-4 border-t border-gray-100 bg-white flex justify-between items-center text-xs text-[#8A8D96]">
-                <span className="shrink-0">
-                  {reportData?.disclaimer ||
-                    '※ ATV/UPT는 order_id 데이터 부재로 order_item_id 단위 근사치입니다.'}
-                </span>
+                <div className="flex flex-col gap-0.5 shrink-0 min-w-0">
+                  <span className="truncate">
+                    {reportData?.disclaimer ||
+                      '※ ATV/UPT는 order_id 데이터 부재로 order_item_id 단위 근사치입니다.'}
+                  </span>
+                  <span className="truncate text-[10px]">
+                    본 리포트는 참고용이며, 실제 발주·재고 결정은 담당자가 직접 판단하여 진행합니다.
+                  </span>
+                </div>
                 <div className="flex gap-2 shrink-0 ml-4">
                   <button
                     onClick={() => setIsModalOpen(false)}

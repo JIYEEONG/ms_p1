@@ -165,23 +165,26 @@ export default function FilterBar({
 
   useEffect(() => {
     const controller = new AbortController();
+    const params = new URLSearchParams();
+    if (categoryLarge !== '전체') params.set('category_large', categoryLarge);
 
-    fetch(`${API_BASE_URL}/api/v1/dashboard/overview-filter-options`, { signal: controller.signal })
+    fetch(`${API_BASE_URL}/api/v1/dashboard/overview-filter-options?${params}`, { signal: controller.signal })
       .then((response) => {
         if (!response.ok) throw new Error('분석 조건을 불러오지 못했습니다.');
         return response.json() as Promise<FilterOptions>;
       })
       .then((data) => {
         setOptions(data);
-        setStartDate(parseDate(data.min_date));
-        setEndDate(parseDate(data.max_date));
+        setStartDate((prev) => prev ?? parseDate(data.min_date));
+        setEndDate((prev) => prev ?? parseDate(data.max_date));
+        setCategoryMiddle((prev) => (data.category_middle.includes(prev) ? prev : '전체'));
       })
       .catch((requestError: Error) => {
         if (requestError.name !== 'AbortError') setError(requestError.message);
       });
 
     return () => controller.abort();
-  }, []);
+  }, [categoryLarge]);
 
   const minDate = useMemo(() => options ? parseDate(options.min_date) : null, [options]);
   const maxDate = useMemo(() => options ? parseDate(options.max_date) : null, [options]);

@@ -4,6 +4,36 @@
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
 
+// 책임성 때문에 추가된 항목으로 오류가 났을 때 오류임을 명확하게 표시
+export class DashboardApiError extends Error {
+  type: "NETWORK_ERROR" | "SERVER_ERROR";
+  status?: number;
+  constructor(type: "NETWORK_ERROR" | "SERVER_ERROR", message: string, status?: number) {
+    super(message);
+    this.type = type;
+    this.status = status;
+  }
+}
+
+export async function fetchJson<T>(
+  url: string,
+  failMessage: string,
+  init?: RequestInit,
+): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(url, init);
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "AbortError") throw e; // 필터 변경으로 인한 취소는 그대로 전달
+    throw new DashboardApiError("NETWORK_ERROR", "서버에 연결할 수 없습니다.");
+  }
+  if (!res.ok) {
+    // 서버는 응답했지만 실패 (404, 500 등)
+    throw new DashboardApiError("SERVER_ERROR", failMessage, res.status);
+  }
+  return res.json();
+}
+
 // --- 타입 정의 (백엔드 ForecastResponse와 동일하게 맞춤) ---
 export interface ForecastChartPoint {
   week: string;
@@ -48,9 +78,7 @@ export async function getFilterOptions(
   if (categoryLarge) params.set("category_large", categoryLarge);
   if (categoryMiddle) params.set("category_middle", categoryMiddle);
 
-  const res = await fetch(`${API_BASE_URL}/api/v1/dashboard/filter-options?${params}`);
-  if (!res.ok) throw new Error("필터 옵션 조회 실패");
-  return res.json();
+  return fetchJson(`${API_BASE_URL}/api/v1/dashboard/filter-options?${params}`, "필터 옵션 조회 실패");
 }
 
 export async function getForecast(
@@ -58,9 +86,7 @@ export async function getForecast(
   weeks: number
 ): Promise<ForecastData> {
   const params = new URLSearchParams({ product_id: productId, weeks: String(weeks) });
-  const res = await fetch(`${API_BASE_URL}/api/v1/dashboard/forecast?${params}`);
-  if (!res.ok) throw new Error("예측 데이터 조회 실패");
-  return res.json();
+  return fetchJson(`${API_BASE_URL}/api/v1/dashboard/forecast?${params}`, "예측 데이터 조회 실패");
 }
 
 // --- HUB별 재고 탭 ---
@@ -80,9 +106,7 @@ export interface HubInventoryData {
 }
 
 export async function getHubInventory(): Promise<HubInventoryData> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/dashboard/hub-inventory`);
-  if (!res.ok) throw new Error("HUB별 재고 조회 실패");
-  return res.json();
+  return fetchJson(`${API_BASE_URL}/api/v1/dashboard/hub-inventory`, "HUB별 재고 조회 실패");
 }
 
 // --- HUB 재고 균형 매트릭스 ---
@@ -102,9 +126,10 @@ export interface HubMatrixData {
 }
 
 export async function getHubInventoryMatrix(topN: number = 4): Promise<HubMatrixData> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/dashboard/hub-inventory-matrix?top_n=${topN}`);
-  if (!res.ok) throw new Error("HUB 재고 매트릭스 조회 실패");
-  return res.json();
+  return fetchJson(
+    `${API_BASE_URL}/api/v1/dashboard/hub-inventory-matrix?top_n=${topN}`,
+    "HUB 재고 매트릭스 조회 실패"
+  );
 }
 
 // --- 상품별 재고 탭 ---
@@ -157,9 +182,10 @@ export async function getProductFilterOptions(params?: {
   if (params?.category_middle) query.set("category_middle", params.category_middle);
   if (params?.product_id) query.set("product_id", params.product_id);
 
-  const res = await fetch(`${API_BASE_URL}/api/v1/dashboard/product-filter-options?${query}`);
-  if (!res.ok) throw new Error("상품 필터 옵션 조회 실패");
-  return res.json();
+  return fetchJson(
+    `${API_BASE_URL}/api/v1/dashboard/product-filter-options?${query}`,
+    "상품 필터 옵션 조회 실패"
+  );
 }
 
 export async function getProductInventory(params?: {
@@ -180,9 +206,10 @@ export async function getProductInventory(params?: {
   if (params?.service_level) query.set("service_level", String(params.service_level));
   if (params?.leadtime_factor) query.set("leadtime_factor", String(params.leadtime_factor));
 
-  const res = await fetch(`${API_BASE_URL}/api/v1/dashboard/product-inventory?${query}`);
-  if (!res.ok) throw new Error("상품별 재고 조회 실패");
-  return res.json();
+  return fetchJson(
+    `${API_BASE_URL}/api/v1/dashboard/product-inventory?${query}`,
+    "상품별 재고 조회 실패"
+  );
 }
 
 // --- HUB 간 권장 이동 및 진행 상태 ---
@@ -205,9 +232,8 @@ export interface TransferRecommendationData {
 export async function getHubTransferRecommendation(
   resultLimit: number = 4
 ): Promise<TransferRecommendationData> {
-  const res = await fetch(
-    `${API_BASE_URL}/api/v1/dashboard/hub-transfer-recommendation?result_limit=${resultLimit}`
+  return fetchJson(
+    `${API_BASE_URL}/api/v1/dashboard/hub-transfer-recommendation?result_limit=${resultLimit}`,
+    "HUB 이동 권장 조회 실패"
   );
-  if (!res.ok) throw new Error("HUB 이동 권장 조회 실패");
-  return res.json();
 }

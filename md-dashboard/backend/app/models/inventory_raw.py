@@ -1,6 +1,6 @@
 # dbo.INVENTORY (원본, 대문자) — 스냅샷 기반 실제 재고 데이터
 
-from sqlalchemy import Column, String, Integer, Date, Boolean
+from sqlalchemy import Column, String, Integer, Date, Boolean, Unicode
 from app.core.database import Base
 
 class InventoryRaw(Base):
@@ -10,7 +10,7 @@ class InventoryRaw(Base):
     snapshot_date = Column(Date, primary_key=True)
     sku_id = Column(String(50), primary_key=True)
     hub_id = Column(String(50), primary_key=True)
-    hub_name = Column(String(50))
+    hub_name = Column(Unicode(50))
     on_hand_qty = Column(Integer)
     available_qty = Column(Integer)
     reserved_qty = Column(Integer)

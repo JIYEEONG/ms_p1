@@ -45,3 +45,47 @@ python -m uvicorn main:app --reload --port 8001
 npm run build
 npm run lint
 ```
+
+## 머지 전 체크리스트
+
+새 기능 브랜치를 `main`에 머지하기 전에 아래를 확인합니다.
+
+- [ ] `backend/requirements.txt`가 바뀌었다면 `pip install -r requirements.txt` 재실행 후 서버가 정상 기동되는지 확인
+- [ ] `package.json`이 바뀌었다면 `npm install` 재실행 후 `npm run build` 통과 확인
+- [ ] 새로운 환경변수가 추가됐다면 아래 환경변수 목록에도 반영
+- [ ] `npm run lint` 통과 확인
+- [ ] 머지 담당자 1명 지정 후 리뷰 — 위 항목 확인 완료 시 머지 진행
+
+## 환경변수
+
+민감한 값(비밀번호, API 키)은 이 README에 적지 않고 각자 `.env` / `.env.local`에만 보관합니다.
+
+### 프론트엔드 (`.env.local`)
+```
+NEXT_PUBLIC_API_URL=
+NEXT_PUBLIC_KRW_PER_USD=
+```
+
+### 백엔드 (`backend/.env`)
+```
+# Azure SQL DB
+DB_SERVER=
+DB_PORT=
+DB_NAME=
+DB_USER=
+DB_PASSWORD=
+
+# Azure OpenAI
+AZURE_OPENAI_ENDPOINT=
+AZURE_OPENAI_KEY=
+AZURE_DEPLOYMENT_NAME=
+
+# Azure AI Search
+AZURE_AI_SEARCH_ENDPOINT=
+AZURE_AI_SEARCH_API_KEY=
+
+# 역할 분담 로그인
+ROLE_CEO_PASSWORD=
+ROLE_MD_PASSWORD=
+ROLE_STOCK_PASSWORD=
+```

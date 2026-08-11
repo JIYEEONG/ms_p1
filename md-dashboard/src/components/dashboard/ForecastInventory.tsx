@@ -188,6 +188,10 @@ export default function Forecast() {
         </div>
       </div>
 
+      <p className="text-[11px] text-[#8A8D96] px-1">
+        본 리포트는 참고용이며, 실제 발주·재고 결정은 담당자가 직접 판단하여 진행합니다.
+      </p>
+
       {/* 4. 중단 차트 영역 */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
         <div className="lg:col-span-7 bg-white/40 backdrop-blur-md border border-white/60 p-5 sm:p-6 rounded-[28px] shadow-sm flex flex-col justify-between min-h-[280px]">

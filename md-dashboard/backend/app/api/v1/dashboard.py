@@ -391,7 +391,10 @@ def get_filter_options(
 
 
 @router.get("/overview-filter-options", response_model=OverviewFilterOptionsResponse)
-def get_overview_filter_options(db: Session = Depends(get_db)):
+def get_overview_filter_options(
+    category_large: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+):
     """현황 탭 분석 조건에 사용하는 SQL Server 기반 필터 목록."""
     min_date, max_date = db.query(
         func.min(Order.order_datetime),
@@ -401,7 +404,7 @@ def get_overview_filter_options(db: Session = Depends(get_db)):
     if min_date is None or max_date is None:
         raise HTTPException(status_code=404, detail="ORDERS 테이블에 기간 데이터가 없습니다.")
 
-    category_large = [
+    category_large_options = [
         value
         for (value,) in (
             db.query(ProductSku.category_large)
@@ -411,16 +414,15 @@ def get_overview_filter_options(db: Session = Depends(get_db)):
             .all()
         )
     ]
-    category_middle = [
-        value
-        for (value,) in (
-            db.query(ProductSku.category_middle)
-            .filter(ProductSku.category_middle.isnot(None))
-            .distinct()
-            .order_by(ProductSku.category_middle)
-            .all()
-        )
-    ]
+
+    middle_query = (
+        db.query(ProductSku.category_middle)
+        .filter(ProductSku.category_middle.isnot(None))
+        .distinct()
+    )
+    if category_large:
+        middle_query = middle_query.filter(ProductSku.category_large == category_large)
+    category_middle = [value for (value,) in middle_query.order_by(ProductSku.category_middle).all()]
     hubs = [
         value
         for (value,) in (
@@ -435,7 +437,7 @@ def get_overview_filter_options(db: Session = Depends(get_db)):
     return OverviewFilterOptionsResponse(
         min_date=min_date.date().isoformat(),
         max_date=max_date.date().isoformat(),
-        category_large=category_large,
+        category_large=category_large_options,
         category_middle=category_middle,
         seasons=[
             "봄(2월1일-4월30일)",

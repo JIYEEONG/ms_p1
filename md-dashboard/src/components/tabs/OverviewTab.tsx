@@ -11,6 +11,7 @@ import SalesEfficiency from '../dashboard/SalesEfficiency';
 import CategorySalesChart from '../charts/CategorySalesChart';
 import InventoryStatus from '../dashboard/InventoryStatus';
 import RiskSkuTable from '../dashboard/RiskSkuTable';
+import { DashboardApiError, fetchJson } from '../../services/dashboardApi';
 
 export default function OverviewTab() {
   // 백엔드 데이터를 보관할 State
@@ -21,6 +22,8 @@ export default function OverviewTab() {
   const [kpiData, setKpiData] = useState<OverviewKpiData | null>(null);
   const [kpiLoading, setKpiLoading] = useState(false);
   const [kpiError, setKpiError] = useState('');
+  const [trendError, setTrendError] = useState('');
+  const [categoryError, setCategoryError] = useState('');
   const [goalSettings, setGoalSettings] = useState<GoalSettings>({
     day: 3287671,
     week: 23076923,
@@ -57,10 +60,12 @@ export default function OverviewTab() {
 
   // 카테고리별 매출 API 호출
   useEffect(() => {
-    fetch(`${apiBaseUrl}/api/v1/dashboard/category-sales`)
-      .then((res) => res.json())
+    setCategoryError('');
+    fetchJson<any[]>(`${apiBaseUrl}/api/v1/dashboard/category-sales`, '카테고리별 매출 조회 실패')
       .then((data) => setCategorySalesData(data))
-      .catch((err) => console.error('Category sales fetch error:', err));
+      .catch((err: DashboardApiError) => {
+        setCategoryError(err.type === 'NETWORK_ERROR' ? '서버에 연결할 수 없습니다.' : err.message);
+      });
   }, [apiBaseUrl]);
 
   // 목표 설정값을 백엔드에서 불러오기 (최초 1회)
@@ -94,14 +99,18 @@ export default function OverviewTab() {
     if (filters.season !== '전체') params.set('season', filters.season);
     if (filters.hub !== '전체') params.set('hub', filters.hub);
 
-    fetch(`${apiBaseUrl}/api/v1/dashboard/overview-kpis?${params}`, { signal: controller.signal })
-      .then((response) => {
-        if (!response.ok) throw new Error('KPI 데이터를 불러오지 못했습니다.');
-        return response.json() as Promise<OverviewKpiData>;
-      })
+    fetchJson<OverviewKpiData>(
+      `${apiBaseUrl}/api/v1/dashboard/overview-kpis?${params}`,
+      'KPI 데이터를 불러오지 못했습니다.',
+      { signal: controller.signal },
+    )
       .then(setKpiData)
-      .catch((requestError: Error) => {
-        if (requestError.name !== 'AbortError') setKpiError(requestError.message);
+      .catch((requestError: DashboardApiError | DOMException) => {
+        if (requestError.name === 'AbortError') return;
+        const err = requestError as DashboardApiError;
+        setKpiError(
+          err.type === 'NETWORK_ERROR' ? '서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.' : err.message,
+        );
       })
       .finally(() => {
         if (!controller.signal.aborted) setKpiLoading(false);
@@ -124,14 +133,16 @@ export default function OverviewTab() {
     if (filters.season !== '전체') params.set('season', filters.season);
     if (filters.hub !== '전체') params.set('hub', filters.hub);
 
-    fetch(`${apiBaseUrl}/api/v1/dashboard/sales-trend?${params}`, { signal: controller.signal })
-      .then((response) => {
-        if (!response.ok) throw new Error('순매출 추이 데이터를 불러오지 못했습니다.');
-        return response.json() as Promise<SalesTrendData>;
-      })
-      .then(setSalesTrendData)
-      .catch((requestError: Error) => {
-        if (requestError.name !== 'AbortError') console.error(requestError.message);
+    fetchJson<SalesTrendData>(
+      `${apiBaseUrl}/api/v1/dashboard/sales-trend?${params}`,
+      '순매출 추이 데이터를 불러오지 못했습니다.',
+      { signal: controller.signal },
+    )
+      .then((data) => { setTrendError(''); setSalesTrendData(data); })
+      .catch((requestError: DashboardApiError | DOMException) => {
+        if (requestError.name === 'AbortError') return;
+        const err = requestError as DashboardApiError;
+        setTrendError(err.type === 'NETWORK_ERROR' ? '서버에 연결할 수 없습니다.' : err.message);
       });
 
     return () => controller.abort();
@@ -170,6 +181,7 @@ export default function OverviewTab() {
 
       {/* 4. 순매출 추이 */}
       <section>
+        {trendError && <p className="text-sm text-red-500 mb-2">{trendError}</p>}
         <SalesTrendChart
           data={salesTrendData}
           unit={salesTrendUnit}
@@ -188,7 +200,7 @@ export default function OverviewTab() {
       {/* 6. 카테고리별 매출 (좌 2칸) + 재고/위험 상태 (우 1칸) */}
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
         <div className="lg:col-span-2 h-full">
-          {/* data 전달 */}
+          {categoryError && <p className="text-sm text-red-500 mb-2">{categoryError}</p>}
           <CategorySalesChart data={categorySalesData} />
         </div>
         <div className="lg:col-span-1 h-full">
