@@ -33,7 +33,7 @@ export default function OverviewTab() {
   const [goalUnit, setGoalUnit] = useState<GoalUnit>('year');
   const [currency, setCurrency] = useState<DisplayCurrency>('KRW');
   const exchangeRate = Number(process.env.NEXT_PUBLIC_KRW_PER_USD) || 1350;
-  const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
+  const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
   const handleFilterChange = useCallback((nextFilters: OverviewFilters) => {
     setKpiLoading(true);
     setKpiError('');

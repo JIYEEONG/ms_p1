@@ -27,18 +27,18 @@ npm install
 npm run dev
 ```
 
-### 백엔드 (기본 포트 8001)
+### 백엔드 (기본 포트 8000)
 ```bash
 cd backend
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
-python -m uvicorn main:app --reload --port 8001
+python -m uvicorn main:app --reload --port 8000
 ```
 
-백엔드 실행에는 `.env` (Azure SQL DB, Azure OpenAI, Azure AI Search 접속 정보)가 필요합니다. API 문서는 `http://localhost:8001/docs`.
+백엔드 실행에는 `.env` (Azure SQL DB, Azure OpenAI, Azure AI Search 접속 정보)가 필요합니다. API 문서는 `http://localhost:8000/docs`.
 
-프론트엔드는 `.env.local`의 `NEXT_PUBLIC_API_URL`(기본값 `http://localhost:8001`)로 백엔드에 연결합니다.
+프론트엔드는 `.env.local`의 `NEXT_PUBLIC_API_URL`(기본값 `http://localhost:8000`)로 백엔드에 연결합니다.
 
 ## 빌드
 ```bash

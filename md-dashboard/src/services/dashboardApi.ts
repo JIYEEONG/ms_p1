@@ -2,7 +2,7 @@
 // 26.08.05 UI 변경에 따른 파일 추가
 // 26.08.06 예측 탭 API 연동 함수 추가
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 // 책임성 때문에 추가된 항목으로 오류가 났을 때 오류임을 명확하게 표시
 export class DashboardApiError extends Error {
