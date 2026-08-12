@@ -100,7 +100,7 @@ export default function Sidebar({ currentView, onViewChange, isOpen, onToggle, a
           <div className="flex items-center justify-between mb-8 gap-2">
             <div className="flex items-center gap-3 min-w-0">
               <div className="w-10 h-10 rounded-2xl bg-[#3F4145] text-white flex items-center justify-center font-bold text-sm shrink-0 shadow-[0_4px_10px_rgba(0,0,0,0.15)]">
-                MD
+                  
               </div>
               <div className="min-w-0">
                 <h1 className="font-extrabold text-sm leading-tight text-[#3F4145] truncate">ZERO</h1>
@@ -182,8 +182,6 @@ export default function Sidebar({ currentView, onViewChange, isOpen, onToggle, a
         <div className="text-[10px] text-[#8A8D96] space-y-1 border-t border-black/5 pt-4">
           <p>장기재고: 무판매 60일 이상</p>
           <p>과잉재고: WOS 12주 이상</p>
-          <p>주문건수: COUNT(DISTINCT order_item_id)</p>
-          <p>목표매출: 추천값 또는 사용자 입력값</p>
         </div>
       </div>
     </aside>

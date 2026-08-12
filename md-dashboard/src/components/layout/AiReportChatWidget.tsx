@@ -304,7 +304,7 @@ export default function AiReportChatWidget() {
                     📊 AI 판매현황 & MD 액션플랜 리포트
                   </span>
                   <span className="text-xs bg-green-100 text-green-700 font-bold px-2.5 py-0.5 rounded-full">
-                    Team2
+                    ZERO
                   </span>
                 </div>
                 <button

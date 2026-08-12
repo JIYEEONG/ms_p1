@@ -20,13 +20,13 @@ export default function Header() {
       {/* 사용자 프로필 영역 */}
       <div className="user-profile flex items-center gap-3">
         <div className="text-right hidden sm:block">
-          <p className="text-xs font-bold text-[#3F4145] m-0">Team2 MD</p>
-          <p className="text-[10px] text-[#8A8D96] m-0 mt-0.5">재고관리팀 / 총괄</p>
+          <p className="text-xs font-bold text-[#3F4145] m-0">ZERO</p>
+          <p className="text-[10px] text-[#8A8D96] m-0 mt-0.5">AI 재고관리 ERP</p>
         </div>
         
         {/* 입체감 적용된 아바타 아이콘 */}
         <div className="avatar w-10 h-10 rounded-full bg-white/80 backdrop-blur-md border border-white/90 grid place-items-center text-xs font-extrabold text-[#3F4145] shadow-[0_8px_16px_-4px_rgba(140,150,170,0.2),inset_0_1px_2px_0_rgba(255,255,255,0.9)] select-none">
-          T2
+          ZERO
         </div>
       </div>
     </header>
