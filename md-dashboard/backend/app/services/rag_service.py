@@ -1,7 +1,11 @@
 # app/services/rag_service.py
 # 26.08.09 AI고도화 작업에 따른 코드 수정
 # 26.08.XX 기간 파싱 + 되묻기(모호/범위밖) + 상단 기간 명시 추가
-#   -> charts/md_insights JSON 스키마는 원본과 100% 동일. 아래 표시된 부분만 추가/변경.
+#   -> charts/md_insights JSON 스키마는 원본과 100% 동일.
+
+# app/services/rag_service.py
+# 26.08.09 AI고도화 작업에 따른 코드 수정
+# 26.08.XX 기간 파싱 + 되묻기(모호/범위밖) + 상단 기간 명시 추가
 
 import json
 from openai import AzureOpenAI, OpenAI
@@ -10,13 +14,12 @@ from app.services.tools import get_kpi_and_efficiency, get_inventory_risk, get_o
 from app.services.period_parser import parse_period, to_card_label, PERIOD_INPUT_HINT, PERIOD_EXAMPLES
 
 # ============================================================
-# 26.08.10 USE_LOCAL 분기: true면 Ollama(LLM/임베딩) + Chroma(벡터검색),
-#          false면 기존 Azure OpenAI + Azure AI Search 그대로 사용.
+# USE_LOCAL 분기: true면 Ollama(LLM/임베딩) + Chroma(벡터검색),
+#                 false면 기존 Azure OpenAI + Azure AI Search 사용.
 # ============================================================
 if settings.USE_LOCAL:
     import chromadb
 
-    # Ollama는 /v1 경로에 OpenAI 호환 API(chat/completions, embeddings)를 노출함
     llm_client = OpenAI(base_url=f"{settings.OLLAMA_BASE_URL}/v1", api_key="ollama")
     CHAT_MODEL = settings.OLLAMA_MODEL
 
@@ -41,13 +44,13 @@ else:
 
 
 def _embed_query(query: str) -> list[float]:
-    """Ollama 임베딩 모델(예: nomic-embed-text)로 쿼리 벡터 생성 (Chroma 검색용)"""
+    """Ollama 임베딩 모델로 쿼리 벡터 생성"""
     response = llm_client.embeddings.create(model=settings.OLLAMA_EMBED_MODEL, input=query)
     return response.data[0].embedding
 
 
 def retrieve_policy_docs(query: str) -> str:
-    """정책 문서 검색: USE_LOCAL이면 Chroma(벡터 검색), 아니면 Azure AI Search(키워드 검색)"""
+    """정책 문서 검색"""
     try:
         if settings.USE_LOCAL:
             results = policy_collection.query(query_embeddings=[_embed_query(query)], n_results=3)
@@ -65,24 +68,24 @@ def retrieve_policy_docs(query: str) -> str:
         print(f"RAG Retrieval Error: {e}")
         return "정책 문서 검색 불가능"
 
+
 def classify_intent(user_prompt: str) -> str:
     """사용자의 질문 의도(Intent) 분류"""
-    # [변경] "수치" 추가 - 입력창 힌트 예시 문구("25년 8월 월간수치 보여줘")가
-    #        기존 키워드 목록에 안 걸려서 REPORT로 분류가 안 되는 문제 발견, 수정.
-    report_keywords = ["리포트", "보고서", "액션플랜", "분석", "현황", "추이", "실적", "재고", "매출", "지표", "작성", "수치"]
+    report_keywords = [
+        "리포트", "보고서", "액션플랜", "분석", "현황", 
+        "추이", "실적", "재고", "매출", "지표", "작성", "수치",
+        "년", "월", "일", "분기", "주간", "월간"  # 기간 재입력 대응
+    ]
     if any(keyword in user_prompt for keyword in report_keywords):
         return "REPORT"
     return "CHAT"
 
 
-# ============================================================
-# [신규] 기간이 DB 실데이터 범위 안에 있는지 확인
-# ============================================================
 def _is_within_data_range(period) -> tuple[bool, dict]:
+    """기간이 DB 실데이터 범위 안에 있는지 확인"""
     data_range = get_orders_date_range()
     min_date, max_date = data_range.get("min_date"), data_range.get("max_date")
     if not min_date or not max_date:
-        # 범위 조회 자체가 실패하면(DB 연결 문제 등) 검증을 건너뛰고 통과시킴 -> 리포트 생성은 시도
         return True, data_range
     in_range = (period.start_date >= min_date) and (period.end_date <= max_date)
     return in_range, data_range
@@ -90,7 +93,7 @@ def _is_within_data_range(period) -> tuple[bool, dict]:
 
 def _clarify_response(message: str, extra: dict | None = None) -> dict:
     resp = {
-        "type": "clarify_period",
+        "type": "chat",  # 모달을 띄우지 않고 챗봇 영역에 메시지를 노출하기 위해 'chat' 타입 지정
         "message": message,
         "hint": PERIOD_INPUT_HINT,
         "examples": PERIOD_EXAMPLES,
@@ -106,12 +109,10 @@ def generate_sales_report(user_prompt: str) -> dict:
     if intent == "CHAT":
         return {
             "type": "chat",
-            "message": "안녕하세요! MD 대시보드 AI 보조입니다. '리포트 작성해줘'라고 입력하시면 시각화 대시보드를 생성해 드립니다."
+            "message": "안녕하세요! MD 대시보드 AI 보조입니다. '26년 8월 매출 리포트'처럼 기간과 원하시는 리포트를 입력해 주세요."
         }
 
-    # ============================================================
-    # [신규] 1) 기간 파싱 - 모호하면 리포트 생성 없이 되묻기
-    # ============================================================
+    # 1) 기간 파싱 - 모호하면 되묻기 프롬프트 전달
     period = parse_period(user_prompt)
 
     if period.was_ambiguous:
@@ -119,9 +120,7 @@ def generate_sales_report(user_prompt: str) -> dict:
             "어떤 기간의 리포트를 원하시나요? 일/주/월/분기/년 단위로 정확한 기간을 알려주세요."
         )
 
-    # ============================================================
-    # [신규] 2) 파싱은 됐지만 실제 DB 데이터 범위 밖이면 되묻기
-    # ============================================================
+    # 2) DB 데이터 범위 검증
     in_range, data_range = _is_within_data_range(period)
     if not in_range:
         return _clarify_response(
@@ -131,9 +130,7 @@ def generate_sales_report(user_prompt: str) -> dict:
             extra={"available_range": data_range},
         )
 
-    # ============================================================
-    # [변경] 3) 날짜 인자를 넘겨서 해당 기간 데이터만 조회
-    # ============================================================
+    # 3) DB 데이터 및 정책 조회
     kpi_efficiency = get_kpi_and_efficiency(period.start_datetime, period.end_datetime)
     inventory_summary = get_inventory_risk(period.start_datetime, period.end_datetime)
     policy_context = retrieve_policy_docs(user_prompt)
@@ -141,9 +138,7 @@ def generate_sales_report(user_prompt: str) -> dict:
     trend_data = kpi_efficiency.get('monthly_trend', [])
     inv_data = inventory_summary.get('hub_inventory_summary', [])
 
-    # ============================================================
-    # [변경] 4) 시스템 프롬프트에 "적용된 기간"을 못박아 LLM이 다른 기간을 언급 못 하게 함
-    # ============================================================
+    # 4) LLM 시스템 프롬프트 작성
     system_prompt = f"""
     당신은 커머스 데이터 분석 Senior MD 전문가입니다.
     제공된 [Azure SQL DB 데이터]만을 기반으로 분석하여 JSON 리포트를 작성하세요.
@@ -214,20 +209,9 @@ def generate_sales_report(user_prompt: str) -> dict:
 
         res_json = json.loads(response.choices[0].message.content)
         res_json["type"] = "report"
-
-        # ============================================================
-        # [신규] 5) 화면 상단에 보여줄 기간 정보 - LLM이 아니라 코드가 직접 박아넣음
-        #    (LLM이 기간을 잘못 쓰거나 누락해도 항상 정확한 값이 노출되도록)
-        # ============================================================
         res_json["display_label"] = period.display_label
-        res_json["period_card_label"] = to_card_label(period)  # [신규] 상단 기간 카드용 짧은 포맷
+        res_json["period_card_label"] = to_card_label(period)
         res_json["period_meta"] = period.to_dict()
-
-        print("\n================ [FINAL REPORT JSON] ================")
-        print("display_label     :", repr(res_json.get("display_label")))
-        print("period_card_label :", repr(res_json.get("period_card_label")))
-        print("period_meta       :", res_json.get("period_meta"))
-        print("======================================================\n")
 
         return res_json
 

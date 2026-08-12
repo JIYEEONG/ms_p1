@@ -1,5 +1,3 @@
-// 26.08.07 AI 챗봇 서비스 구축에 따른 파일 추가
-
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -59,91 +57,89 @@ export default function AiReportChatWidget() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
 
+  // 도움말 팝업 및 키워드 목록
+  const [showHelp, setShowHelp] = useState(false);
+  const keywords = [
+    "리포트", "보고서", "액션플랜", "분석", "현황", "추이", 
+    "실적", "재고", "매출", "지표", "작성", "수치"
+  ];
+
   useEffect(() => {
     setMounted(true);
   }, []);
-// AiReportChatWidget.tsx 안의 기존 handleExcelDownload 함수를 통째로 이걸로 교체하세요.
-// 상단의 `import * as XLSX from 'xlsx';` 줄은 이제 필요 없으면 지워도 됩니다
-// (다른 곳에서 안 쓰면 지우세요 - 쓰고 있으면 그대로 두세요).
 
-// AiReportChatWidget.tsx 안의 handleExcelDownload 함수를 이걸로 교체하세요.
-// 변경점: Content-Disposition 헤더에서 파일명을 뽑는 로직을 강화.
-//   - 한글 파일명은 서버가 filename*=UTF-8''%EC%A3%BC%EA%B0%84... 형태로 보내는데,
-//     기존 정규식은 이 형태를 못 잡아서 항상 기본값(AI_판매리포트.xlsx)으로 빠졌음.
+  const handleKeywordClick = (word: string) => {
+    setPrompt((prev) => (prev ? `${prev} ${word}` : word));
+  };
 
-const extractFileName = (disposition: string): string => {
-  if (!disposition) return 'AI_판매리포트.xlsx';
+  const extractFileName = (disposition: string): string => {
+    if (!disposition) return 'AI_판매리포트.xlsx';
 
-  // 1순위: filename*=UTF-8''퍼센트인코딩된값 (한글 파일명은 보통 이 형태)
-  const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
-  if (utf8Match) {
+    const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+    if (utf8Match) {
+      try {
+        return decodeURIComponent(utf8Match[1]);
+      } catch {
+        // decode 실패시 폴백
+      }
+    }
+
+    const quotedMatch = disposition.match(/filename="([^"]+)"/i);
+    if (quotedMatch) {
+      try {
+        return decodeURIComponent(quotedMatch[1]);
+      } catch {
+        return quotedMatch[1];
+      }
+    }
+
+    const plainMatch = disposition.match(/filename=([^;]+)/i);
+    if (plainMatch) {
+      return plainMatch[1].trim();
+    }
+
+    return 'AI_판매리포트.xlsx';
+  };
+
+  const handleExcelDownload = async () => {
+    if (!reportData) {
+      alert('다운로드할 리포트 데이터가 없습니다.');
+      return;
+    }
+    if (!reportData.period_meta) {
+      alert('기간 정보가 없어 엑셀을 생성할 수 없습니다. 리포트를 다시 생성해주세요.');
+      return;
+    }
+
     try {
-      return decodeURIComponent(utf8Match[1]);
-    } catch {
-      // decode 실패 시 2순위로 폴백
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/reports/export-excel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ period_meta: reportData.period_meta }),
+      });
+
+      if (!res.ok) {
+        throw new Error(`HTTP Error! Status: ${res.status}`);
+      }
+
+      const disposition = res.headers.get('Content-Disposition') || '';
+      const fileName = extractFileName(disposition);
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('❌ Excel Download Error:', error);
+      alert('엑셀 파일 생성 중 오류가 발생했습니다. 백엔드 서버 상태를 확인해주세요.');
     }
-  }
+  };
 
-  // 2순위: filename="..." (따옴표 있는 일반 형태)
-  const quotedMatch = disposition.match(/filename="([^"]+)"/i);
-  if (quotedMatch) {
-    try {
-      return decodeURIComponent(quotedMatch[1]);
-    } catch {
-      return quotedMatch[1];
-    }
-  }
-
-  // 3순위: filename=... (따옴표 없는 형태)
-  const plainMatch = disposition.match(/filename=([^;]+)/i);
-  if (plainMatch) {
-    return plainMatch[1].trim();
-  }
-
-  return 'AI_판매리포트.xlsx';
-};
-
-const handleExcelDownload = async () => {
-  if (!reportData) {
-    alert('다운로드할 리포트 데이터가 없습니다.');
-    return;
-  }
-  if (!reportData.period_meta) {
-    alert('기간 정보가 없어 엑셀을 생성할 수 없습니다. 리포트를 다시 생성해주세요.');
-    return;
-  }
-
-  try {
-    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/reports/export-excel`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ period_meta: reportData.period_meta }),
-    });
-
-    if (!res.ok) {
-      throw new Error(`HTTP Error! Status: ${res.status}`);
-    }
-
-    const disposition = res.headers.get('Content-Disposition') || '';
-    const fileName = extractFileName(disposition);
-
-    // 디버그용 - 정상 확인되면 이 줄은 지워도 됩니다
-    console.log('Content-Disposition:', disposition, '-> 추출된 파일명:', fileName);
-
-    const blob = await res.blob();
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    window.URL.revokeObjectURL(url);
-  } catch (error) {
-    console.error('❌ Excel Download Error:', error);
-    alert('엑셀 파일 생성 중 오류가 발생했습니다. 백엔드 서버 상태를 확인해주세요.');
-  }
-};
   const handleGenerate = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!prompt.trim() || loading) return;
@@ -205,10 +201,54 @@ const handleExcelDownload = async () => {
   return (
     <>
       {/* 1. 사이드바 입력 위젯 */}
-      <div className="flex flex-col h-full p-3.5 bg-white/80 backdrop-blur-sm rounded-2xl border border-white shadow-[0_10px_20px_-5px_rgba(140,150,170,0.15)] text-xs justify-between">
+      <div className="relative flex flex-col h-full p-3.5 bg-white/80 backdrop-blur-sm rounded-2xl border border-white shadow-[0_10px_20px_-5px_rgba(140,150,170,0.15)] text-xs justify-between">
+        
+        {/* 타이틀 및 우측 상단 가이드 버튼 */}
         <div className="font-bold text-[#3F4145] mb-2 flex items-center justify-between border-b border-black/5 pb-2">
           <span className="flex items-center gap-1.5">🤖 AI 리포트 생성기</span>
+          
+          <button
+            type="button"
+            onClick={() => setShowHelp(!showHelp)}
+            className="w-5 h-5 flex items-center justify-center text-[11px] font-bold text-[#8A8D96] hover:text-[#3F4145] bg-white hover:bg-slate-100 rounded-full border border-slate-200 transition-all cursor-pointer shadow-sm"
+            title="키워드 가이드"
+          >
+            ?
+          </button>
         </div>
+
+        {/* '?' 버튼 클릭 시 뜨는 키워드 안내 팝업 */}
+        {showHelp && (
+          <div className="absolute left-0 bottom-full mb-2 w-64 p-3 bg-white/95 backdrop-blur-md border border-slate-200 rounded-2xl shadow-2xl z-50 text-xs">
+            <div className="flex justify-between items-center pb-1.5 mb-2 border-b border-slate-100 font-bold text-[#3F4145]">
+              <span>💡 리포트 요청 키워드</span>
+              <button
+                type="button"
+                onClick={() => setShowHelp(false)}
+                className="text-slate-400 hover:text-slate-600 font-bold px-1 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="text-[#8A8D96] mb-2 leading-tight text-[11px]">
+              아래 키워드가 포함되면 리포트가 생성됩니다. (클릭 시 입력창에 추가)
+            </p>
+            <div className="flex flex-wrap gap-1 mb-2.5 max-h-28 overflow-y-auto">
+              {keywords.map((kw, i) => (
+                <span
+                  key={i}
+                  onClick={() => handleKeywordClick(kw)}
+                  className="px-1.5 py-0.5 bg-slate-100 hover:bg-blue-50 text-[#3F4145] hover:text-blue-600 rounded-md cursor-pointer transition-colors text-[11px] font-medium"
+                >
+                  #{kw}
+                </span>
+              ))}
+            </div>
+            <div className="bg-blue-50/70 p-2 rounded-xl text-[10px] text-blue-700 font-medium">
+              <strong>예시:</strong> "26년 8월 매출 리포트 보여줘"
+            </div>
+          </div>
+        )}
 
         <div className="flex-1 flex flex-col justify-center items-center py-3 bg-white/50 rounded-xl border border-gray-100 mb-2 min-h-[80px]">
           {chatMessage ? (
@@ -277,7 +317,6 @@ const handleExcelDownload = async () => {
 
               {/* 본문 대시보드 */}
               <div className="flex-1 p-6 overflow-y-auto bg-gray-50/30 space-y-6">
-                {/* 섹션 0: 조회 기간 명시 배너 */}
                 {reportData?.period_card_label && (
                   <div className="p-4 bg-indigo-50 border-2 border-indigo-200 rounded-2xl text-center">
                     <p className="text-lg font-extrabold text-indigo-900 tracking-tight">
@@ -286,7 +325,6 @@ const handleExcelDownload = async () => {
                   </div>
                 )}
 
-                {/* 섹션 1: 백엔드 DB 결과 1:1 매핑 KPI 카드 */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div className="p-4 bg-white border border-gray-100 rounded-2xl shadow-sm">
                     <p className="text-[11px] text-gray-500 font-semibold mb-1">목표 달성률</p>
@@ -316,7 +354,6 @@ const handleExcelDownload = async () => {
                   </div>
                 </div>
 
-                {/* 섹션 2: 시각화 차트 그리드 */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {displayCharts.map((chart: ReportChart, idx: number) => {
                     const chartData = chart.data ?? [];
@@ -373,7 +410,6 @@ const handleExcelDownload = async () => {
                   })}
                 </div>
 
-                {/* 섹션 3: MD 진단 & 수직 하위 세로 나열 제안 액션플랜 */}
                 <div className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm space-y-5">
                   <h4 className="text-sm font-extrabold text-[#3F4145] flex items-center gap-1.5">
                     💡 MD 시점 진단 리포트
@@ -398,7 +434,6 @@ const handleExcelDownload = async () => {
                     </div>
                   </div>
 
-                  {/* 세로 나열형 액션 플랜 리스트 */}
                   <div className="pt-2">
                     <h5 className="text-xs font-bold text-[#3F4145] mb-3 flex items-center gap-1">
                       <span>🚀</span> 부서별 제안 액션 플랜
