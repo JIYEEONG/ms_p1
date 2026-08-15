@@ -6,6 +6,7 @@ import dynamic from 'next/dynamic';
 import { useState, useEffect } from 'react';
 import Sidebar from '@/components/layout/Sidebar';
 import Header from '@/components/layout/Header';
+import ScrollControls from '@/components/layout/ScrollControls';
 import { DashboardView } from '@/types/dashboard';
 
 const OverviewTab = dynamic(() => import('@/components/tabs/OverviewTab').catch(() => ({ default: () => <div className="rounded-3xl border border-white/70 bg-white/60 p-6 text-sm text-slate-600">대시보드 화면을 불러오지 못했습니다.</div> })), {
@@ -84,13 +85,14 @@ export default function Home() {
       />
 
       <main className="main flex-1 min-w-0 transition-all duration-300">
-        <Header />
+        <Header onViewChange={setCurrentView} allowedViews={allowedViews} />
 
-        {currentView === 'overview' && allowedViews.includes('overview') && <OverviewTab />}
+        {currentView === 'overview' && allowedViews.includes('overview') && <OverviewTab onNavigate={setCurrentView} allowedViews={allowedViews} />}
         {currentView === 'hub' && allowedViews.includes('hub') && <HubInventory />}
         {currentView === 'product' && allowedViews.includes('product') && <ProductInventory />}
         {currentView === 'forecast' && allowedViews.includes('forecast') && <ForecastInventory />}
       </main>
+      <ScrollControls />
     </div>
   );
 }

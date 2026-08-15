@@ -8,16 +8,16 @@ import { KpiCards, AchievementBanner, OverviewKpiData } from '../dashboard/KpiCa
 import type { GoalSettings, GoalUnit } from '../dashboard/GoalModal';
 import SalesTrendChart, { SalesTrendData, SalesTrendUnit } from '../charts/SalesTrendChart';
 import SalesEfficiency from '../dashboard/SalesEfficiency';
-import CategorySalesChart from '../charts/CategorySalesChart';
+import CategorySalesChart, { CategoryDataItem } from '../charts/CategorySalesChart';
 import InventoryStatus from '../dashboard/InventoryStatus';
-import RiskSkuTable from '../dashboard/RiskSkuTable';
 import { DashboardApiError, fetchJson } from '../../services/dashboardApi';
+import { DashboardView } from '@/types/dashboard';
 
-export default function OverviewTab() {
+export default function OverviewTab({ onNavigate, allowedViews }: { onNavigate: (view: DashboardView) => void; allowedViews: DashboardView[] }) {
   // 백엔드 데이터를 보관할 State
   const [salesTrendData, setSalesTrendData] = useState<SalesTrendData | null>(null);
   const [salesTrendUnit, setSalesTrendUnit] = useState<SalesTrendUnit>('month');
-  const [categorySalesData, setCategorySalesData] = useState([]);
+  const [categorySalesData, setCategorySalesData] = useState<CategoryDataItem[]>([]);
   const [filters, setFilters] = useState<OverviewFilters | null>(null);
   const [kpiData, setKpiData] = useState<OverviewKpiData | null>(null);
   const [kpiLoading, setKpiLoading] = useState(false);
@@ -33,7 +33,7 @@ export default function OverviewTab() {
   const [goalUnit, setGoalUnit] = useState<GoalUnit>('year');
   const [currency, setCurrency] = useState<DisplayCurrency>('KRW');
   const exchangeRate = Number(process.env.NEXT_PUBLIC_KRW_PER_USD) || 1350;
-  const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+  const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || '/backend';
   const handleFilterChange = useCallback((nextFilters: OverviewFilters) => {
     setKpiLoading(true);
     setKpiError('');
@@ -204,14 +204,10 @@ export default function OverviewTab() {
           <CategorySalesChart data={categorySalesData} />
         </div>
         <div className="lg:col-span-1 h-full">
-          <InventoryStatus />
+          <InventoryStatus onNavigate={onNavigate} allowedViews={allowedViews} />
         </div>
       </section>
 
-      {/* 5. 우선 확인 위험 SKU 테이블 (전체 너비) */}
-      <section>
-        <RiskSkuTable />
-      </section>
     </div>
   );
 }

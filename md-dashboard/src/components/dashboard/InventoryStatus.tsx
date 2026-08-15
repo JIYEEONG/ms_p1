@@ -3,8 +3,9 @@
 'use client';
 
 import React from 'react';
+import { DashboardView } from '@/types/dashboard';
 
-export default function InventoryStatus() {
+export default function InventoryStatus({ onNavigate, allowedViews }: { onNavigate: (view: DashboardView) => void; allowedViews: DashboardView[] }) {
   return (
     <div className="bg-white/50 backdrop-blur-xl border border-white/70 rounded-[32px] p-6 shadow-sm flex flex-col justify-between h-full min-h-[360px]">
       <div>
@@ -34,6 +35,11 @@ export default function InventoryStatus() {
             <span className="text-[9px] text-[#8A8D96] font-bold">EA</span>
           </div>
         </div>
+        {allowedViews.includes('hub') && (
+          <button type="button" onClick={() => onNavigate('hub')} className="mb-5 flex w-full items-center justify-center gap-1.5 rounded-2xl border border-white/90 bg-white/75 px-4 py-2.5 text-[11px] font-extrabold text-[#3F4145] shadow-sm transition hover:bg-white">
+            HUB별 재고에서 자세히 보기 <span aria-hidden="true">→</span>
+          </button>
+        )}
       </div>
 
       {/* 하단: 품절/과잉/장기재고 SKU 바 */}
@@ -61,6 +67,11 @@ export default function InventoryStatus() {
           </div>
           <span className="font-extrabold text-[#3F4145] w-6 text-right">26</span>
         </div>
+        {allowedViews.includes('product') && (
+          <button type="button" onClick={() => onNavigate('product')} className="mt-4 flex w-full items-center justify-center gap-1.5 rounded-2xl bg-[#3F4145] px-4 py-2.5 text-[11px] font-extrabold text-white shadow-sm transition hover:bg-[#292B2F]">
+            상품별 재고에서 SKU 확인 <span aria-hidden="true">→</span>
+          </button>
+        )}
       </div>
     </div>
   );

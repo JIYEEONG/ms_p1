@@ -80,6 +80,41 @@ class ForecastResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
+class ForecastRankingItem(BaseModel):
+    rank: int
+    product_id: str
+    product_name: str
+    category_large: Optional[str] = None
+    category_middle: Optional[str] = None
+    expected_sales: int
+
+
+class ForecastRankingResponse(BaseModel):
+    weeks: int
+    best_sellers: List[ForecastRankingItem]
+    slow_sellers: List[ForecastRankingItem]
+
+
+class ForecastStockoutRiskItem(BaseModel):
+    rank: int
+    product_id: str
+    product_name: str
+    category_large: Optional[str] = None
+    category_middle: Optional[str] = None
+    available: int
+    incoming: int
+    weekly_expected_sales: float
+    weeks_to_stockout: float
+    estimated_stockout_date: str
+    projected_shortage: int
+    risk_level: str
+
+
+class ForecastStockoutRiskResponse(BaseModel):
+    forecast_weeks: int
+    items: List[ForecastStockoutRiskItem]
+
 # --- 예측 탭 필터 옵션 (대분류/중분류/상품 드롭다운용) ---
 class ProductOption(BaseModel):
     product_id: str

@@ -48,7 +48,7 @@ export default function CategorySalesChart() {
 import React from 'react';
 
 // API 데이터 타입 정의
-interface CategoryDataItem {
+export interface CategoryDataItem {
   name: string;
   value: string | number;
   percentage: number;
@@ -81,7 +81,9 @@ export default function CategorySalesChart({ data }: CategorySalesChartProps) {
                 />
               </div>
               <span className="font-extrabold text-[#3F4145] w-28 text-right">
-                {typeof item.value === 'number' ? `₩${item.value.toLocaleString()}` : item.value}
+                {typeof item.value === 'number'
+                  ? `${item.value.toLocaleString('ko-KR')}원`
+                  : `${String(item.value).replace(/^₩\s*/, '').replace(/원$/, '')}원`}
               </span>
             </div>
           ))}

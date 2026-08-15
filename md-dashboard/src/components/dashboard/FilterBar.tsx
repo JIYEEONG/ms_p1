@@ -4,7 +4,7 @@
 
 import React, { useEffect, useMemo, useState, type ReactNode } from 'react';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '/backend';
 
 interface FilterOptions {
   min_date: string;
@@ -34,7 +34,7 @@ export interface OverviewFilters {
 }
 
 const selectClassName = "w-full bg-white/90 border border-white rounded-[16px] px-3 py-2.5 text-xs font-bold text-[#3F4145] focus:outline-none focus:ring-2 focus:ring-[#3F4145]/10 shadow-[0_6px_12px_-2px_rgba(140,150,170,0.12),0_2px_4px_-1px_rgba(0,0,0,0.04)] hover:shadow-[0_8px_16px_-2px_rgba(140,150,170,0.18)] transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-60";
-const dateSelectClassName = "w-full min-w-0 cursor-pointer bg-transparent px-2.5 py-2.5 text-center text-xs font-bold text-[#3F4145] outline-none";
+const dateInputClassName = "w-full min-w-0 cursor-pointer rounded-[16px] border border-white bg-white/90 px-3.5 py-3 text-sm font-bold text-[#3F4145] outline-none shadow-[0_6px_12px_-2px_rgba(140,150,170,0.12),0_2px_4px_-1px_rgba(0,0,0,0.04)] transition-all hover:shadow-[0_8px_16px_-2px_rgba(140,150,170,0.18)] focus:ring-2 focus:ring-[#3F4145]/10";
 
 function parseDate(value: string): DateParts {
   const [year, month, day] = value.split('-').map(Number);
@@ -43,10 +43,6 @@ function parseDate(value: string): DateParts {
 
 function toDateValue(value: DateParts) {
   return `${value.year}-${String(value.month).padStart(2, '0')}-${String(value.day).padStart(2, '0')}`;
-}
-
-function numberRange(start: number, end: number) {
-  return Array.from({ length: end - start + 1 }, (_, index) => start + index);
 }
 
 function daysInMonth(year: number, month: number) {
@@ -71,50 +67,34 @@ function shiftYears(value: DateParts, amount: number): DateParts {
   return { year, month: value.month, day: Math.min(value.day, daysInMonth(year, value.month)) };
 }
 
-function DateDropdowns({
+function CalendarDateInput({
+  label,
   value,
   minDate,
   maxDate,
   onChange,
 }: {
+  label: string;
   value: DateParts;
   minDate: DateParts;
   maxDate: DateParts;
   onChange: (value: DateParts) => void;
 }) {
-  const years = numberRange(minDate.year, maxDate.year);
-  const months = numberRange(
-    value.year === minDate.year ? minDate.month : 1,
-    value.year === maxDate.year ? maxDate.month : 12,
-  );
-  const firstDay = value.year === minDate.year && value.month === minDate.month ? minDate.day : 1;
-  const lastDay = value.year === maxDate.year && value.month === maxDate.month
-    ? maxDate.day
-    : daysInMonth(value.year, value.month);
-  const days = numberRange(firstDay, lastDay);
-
-  const update = (next: Partial<DateParts>) => {
-    const candidate = { ...value, ...next };
-    const minimumDay = candidate.year === minDate.year && candidate.month === minDate.month ? minDate.day : 1;
-    const maximumDay = candidate.year === maxDate.year && candidate.month === maxDate.month
-      ? maxDate.day
-      : daysInMonth(candidate.year, candidate.month);
-    candidate.day = Math.min(Math.max(candidate.day, minimumDay), maximumDay);
-    onChange(candidate);
-  };
-
   return (
-    <div className="grid grid-cols-3 divide-x divide-black/10 overflow-hidden rounded-[16px] border border-white bg-white/90 shadow-[0_6px_12px_-2px_rgba(140,150,170,0.12),0_2px_4px_-1px_rgba(0,0,0,0.04)]">
-      <select aria-label="년도" className={dateSelectClassName} value={value.year} onChange={(event) => update({ year: Number(event.target.value) })}>
-        {years.map((year) => <option key={year} value={year}>{year}년</option>)}
-      </select>
-      <select aria-label="월" className={dateSelectClassName} value={value.month} onChange={(event) => update({ month: Number(event.target.value) })}>
-        {months.map((month) => <option key={month} value={month}>{month}월</option>)}
-      </select>
-      <select aria-label="일" className={dateSelectClassName} value={value.day} onChange={(event) => update({ day: Number(event.target.value) })}>
-        {days.map((day) => <option key={day} value={day}>{day}일</option>)}
-      </select>
-    </div>
+    <label className="block min-w-0">
+      <span className="mb-1.5 ml-1 block text-[10px] font-bold text-[#8A8D96]">{label}</span>
+      <input
+        type="date"
+        aria-label={label}
+        className={dateInputClassName}
+        value={toDateValue(value)}
+        min={toDateValue(minDate)}
+        max={toDateValue(maxDate)}
+        onChange={(event) => {
+          if (event.target.value) onChange(parseDate(event.target.value));
+        }}
+      />
+    </label>
   );
 }
 
@@ -317,10 +297,10 @@ export default function FilterBar({
             <div className="pt-4">
               <label className="mb-1.5 ml-1 block text-[11px] font-bold text-[#8A8D96]">조회 기간</label>
               {startDate && endDate && minDate && maxDate ? (
-                <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
-                  <DateDropdowns value={startDate} minDate={minDate} maxDate={maxDate} onChange={changeStartDate} />
-                  <span className="text-xs font-bold text-[#8A8D96]">-</span>
-                  <DateDropdowns value={endDate} minDate={minDate} maxDate={maxDate} onChange={changeEndDate} />
+                <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-end gap-2">
+                  <CalendarDateInput label="시작일" value={startDate} minDate={minDate} maxDate={maxDate} onChange={changeStartDate} />
+                  <span className="pb-3 text-xs font-bold text-[#8A8D96]">–</span>
+                  <CalendarDateInput label="종료일" value={endDate} minDate={minDate} maxDate={maxDate} onChange={changeEndDate} />
                 </div>
               ) : (
                 <div className={`${selectClassName} text-[#8A8D96]`}>{loading ? '기간 불러오는 중...' : '기간 정보 없음'}</div>

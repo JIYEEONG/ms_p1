@@ -2,7 +2,7 @@
 // 26.08.05 UI 변경에 따른 파일 추가
 // 26.08.06 예측 탭 API 연동 함수 추가
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/backend";
 
 // 책임성 때문에 추가된 항목으로 오류가 났을 때 오류임을 명확하게 표시
 export class DashboardApiError extends Error {
@@ -58,6 +58,41 @@ export interface ForecastData {
   chart: ForecastChartPoint[];
 }
 
+export interface ForecastRankingItem {
+  rank: number;
+  product_id: string;
+  product_name: string;
+  category_large?: string | null;
+  category_middle?: string | null;
+  expected_sales: number;
+}
+
+export interface ForecastRankingData {
+  weeks: number;
+  best_sellers: ForecastRankingItem[];
+  slow_sellers: ForecastRankingItem[];
+}
+
+export interface ForecastStockoutRiskItem {
+  rank: number;
+  product_id: string;
+  product_name: string;
+  category_large?: string | null;
+  category_middle?: string | null;
+  available: number;
+  incoming: number;
+  weekly_expected_sales: number;
+  weeks_to_stockout: number;
+  estimated_stockout_date: string;
+  projected_shortage: number;
+  risk_level: '긴급' | '높음' | '주의' | '관찰';
+}
+
+export interface ForecastStockoutRiskData {
+  forecast_weeks: number;
+  items: ForecastStockoutRiskItem[];
+}
+
 export interface ProductOption {
   product_id: string;
   product_name: string;
@@ -87,6 +122,22 @@ export async function getForecast(
 ): Promise<ForecastData> {
   const params = new URLSearchParams({ product_id: productId, weeks: String(weeks) });
   return fetchJson(`${API_BASE_URL}/api/v1/dashboard/forecast?${params}`, "예측 데이터 조회 실패");
+}
+
+export async function getForecastRankings(
+  weeks: number,
+  limit: number = 10,
+): Promise<ForecastRankingData> {
+  const params = new URLSearchParams({ weeks: String(weeks), limit: String(limit) });
+  return fetchJson(`${API_BASE_URL}/api/v1/dashboard/forecast-rankings?${params}`, "예측 판매 순위 조회 실패");
+}
+
+export async function getForecastStockoutRisks(
+  weeks: number,
+  limit: number = 10,
+): Promise<ForecastStockoutRiskData> {
+  const params = new URLSearchParams({ weeks: String(weeks), limit: String(limit) });
+  return fetchJson(`${API_BASE_URL}/api/v1/dashboard/forecast-stockout-risks?${params}`, "재고 부족 위험 순위 조회 실패");
 }
 
 // --- HUB별 재고 탭 ---

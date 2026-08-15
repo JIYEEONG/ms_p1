@@ -112,7 +112,7 @@ export default function AiReportChatWidget() {
     }
 
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/reports/export-excel`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || '/backend'}/api/v1/reports/export-excel`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ period_meta: reportData.period_meta }),
@@ -147,7 +147,7 @@ export default function AiReportChatWidget() {
     setLoading(true);
 
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/reports/generate`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || '/backend'}/api/v1/reports/generate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

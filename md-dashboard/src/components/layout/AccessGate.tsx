@@ -13,7 +13,8 @@ export default function AccessGate({ onUnlock }: AccessGateProps) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+  // 기본값은 Next.js의 동일 출처 프록시를 사용해 브라우저 CORS/호스트 문제를 피한다.
+  const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || '/backend';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

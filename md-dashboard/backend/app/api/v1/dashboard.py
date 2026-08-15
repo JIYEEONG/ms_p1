@@ -31,6 +31,10 @@ from app.schemas.dashboard import (
     ProductInventoryResponse,
     ForecastResponse,
     ForecastChartPoint,
+    ForecastRankingItem,
+    ForecastRankingResponse,
+    ForecastStockoutRiskItem,
+    ForecastStockoutRiskResponse,
     FilterOptionsResponse,
     OverviewFilterOptionsResponse,
     OverviewKpiResponse,
@@ -270,6 +274,143 @@ def get_risk_products(
             )
         )
     return response
+
+
+@router.get("/forecast-rankings", response_model=ForecastRankingResponse)
+def get_forecast_rankings(
+    weeks: int = Query(4, ge=1, le=4, description="예측 기간(주): 1~4"),
+    limit: int = Query(10, ge=1, le=50, description="상·하위 상품 개수"),
+    db: Session = Depends(get_db),
+):
+    """상품별 미래 예측 판매량을 합산해 판매 상위·하위 상품을 반환합니다."""
+    rows = (
+        db.query(DemandForecastResult)
+        .filter(DemandForecastResult.week_start > REFERENCE_DATE)
+        .order_by(DemandForecastResult.product_id, DemandForecastResult.week_start)
+        .all()
+    )
+
+    product_names = {
+        product_id: product_name
+        for product_id, product_name in db.query(
+            ProductSku.product_id,
+            ProductSku.product_name,
+        ).distinct().all()
+    }
+
+    totals = {}
+    counts = {}
+    categories = {}
+    for row in rows:
+        count = counts.get(row.product_id, 0)
+        if count >= weeks:
+            continue
+        totals[row.product_id] = totals.get(row.product_id, 0.0) + (row.predicted_qty or 0)
+        counts[row.product_id] = count + 1
+        categories[row.product_id] = (row.category_large, row.category_middle)
+
+    products = [
+        {
+            "product_id": product_id,
+            "product_name": product_names.get(product_id, product_id),
+            "category_large": categories.get(product_id, (None, None))[0],
+            "category_middle": categories.get(product_id, (None, None))[1],
+            "expected_sales": round(expected_sales),
+        }
+        for product_id, expected_sales in totals.items()
+    ]
+
+    best = sorted(products, key=lambda item: (-item["expected_sales"], item["product_name"]))[:limit]
+    slow = sorted(products, key=lambda item: (item["expected_sales"], item["product_name"]))[:limit]
+
+    return ForecastRankingResponse(
+        weeks=weeks,
+        best_sellers=[ForecastRankingItem(rank=index + 1, **item) for index, item in enumerate(best)],
+        slow_sellers=[ForecastRankingItem(rank=index + 1, **item) for index, item in enumerate(slow)],
+    )
+
+
+@router.get("/forecast-stockout-risks", response_model=ForecastStockoutRiskResponse)
+def get_forecast_stockout_risks(
+    weeks: int = Query(4, ge=1, le=4),
+    limit: int = Query(10, ge=1, le=50),
+    db: Session = Depends(get_db),
+):
+    """현재/입고 재고와 상품별 주간 예측 판매 속도로 재고 소진 위험 순위를 계산한다."""
+    forecast_rows = (
+        db.query(DemandForecastResult)
+        .filter(DemandForecastResult.week_start > REFERENCE_DATE)
+        .order_by(DemandForecastResult.product_id, DemandForecastResult.week_start)
+        .all()
+    )
+    sku_rows = db.query(ProductSku).all()
+
+    product_meta = {}
+    product_skus = {}
+    for sku in sku_rows:
+        product_skus.setdefault(sku.product_id, []).append(sku.sku_id)
+        product_meta.setdefault(sku.product_id, {
+            "product_name": sku.product_name,
+            "category_large": sku.category_large,
+            "category_middle": sku.category_middle,
+        })
+
+    all_sku_ids = [sku.sku_id for sku in sku_rows]
+    inventory_rows = (
+        db.query(InventoryRaw)
+        .filter(InventoryRaw.snapshot_date == REFERENCE_DATE)
+        .filter(InventoryRaw.sku_id.in_(all_sku_ids))
+        .all()
+    ) if all_sku_ids else []
+    inventory_by_sku = {}
+    for row in inventory_rows:
+        totals = inventory_by_sku.setdefault(row.sku_id, [0, 0])
+        totals[0] += row.available_qty or 0
+        totals[1] += row.in_transit_qty or 0
+
+    predicted_totals = {}
+    predicted_counts = {}
+    forecast_categories = {}
+    for row in forecast_rows:
+        count = predicted_counts.get(row.product_id, 0)
+        if count >= weeks:
+            continue
+        predicted_totals[row.product_id] = predicted_totals.get(row.product_id, 0.0) + (row.predicted_qty or 0)
+        predicted_counts[row.product_id] = count + 1
+        forecast_categories[row.product_id] = (row.category_large, row.category_middle)
+
+    risks = []
+    for product_id, total_sales in predicted_totals.items():
+        count = predicted_counts.get(product_id, 0)
+        weekly_sales = total_sales / count if count else 0
+        if weekly_sales <= 0:
+            continue
+        available = sum(inventory_by_sku.get(sku_id, [0, 0])[0] for sku_id in product_skus.get(product_id, []))
+        incoming = sum(inventory_by_sku.get(sku_id, [0, 0])[1] for sku_id in product_skus.get(product_id, []))
+        weeks_to_stockout = (available + incoming) / weekly_sales
+        projected_shortage = max(0, round(total_sales - available - incoming))
+        risk_level = "긴급" if weeks_to_stockout <= 1 else "높음" if weeks_to_stockout <= 2 else "주의" if weeks_to_stockout <= 4 else "관찰"
+        meta = product_meta.get(product_id, {})
+        categories = forecast_categories.get(product_id, (None, None))
+        risks.append({
+            "product_id": product_id,
+            "product_name": meta.get("product_name", product_id),
+            "category_large": meta.get("category_large") or categories[0],
+            "category_middle": meta.get("category_middle") or categories[1],
+            "available": available,
+            "incoming": incoming,
+            "weekly_expected_sales": round(weekly_sales, 1),
+            "weeks_to_stockout": round(weeks_to_stockout, 1),
+            "estimated_stockout_date": (REFERENCE_DATE + timedelta(days=round(weeks_to_stockout * 7))).isoformat(),
+            "projected_shortage": projected_shortage,
+            "risk_level": risk_level,
+        })
+
+    risks.sort(key=lambda item: (item["weeks_to_stockout"], -item["projected_shortage"], item["product_name"]))
+    return ForecastStockoutRiskResponse(
+        forecast_weeks=weeks,
+        items=[ForecastStockoutRiskItem(rank=index + 1, **item) for index, item in enumerate(risks[:limit])],
+    )
 
 
 @router.get("/forecast", response_model=ForecastResponse)

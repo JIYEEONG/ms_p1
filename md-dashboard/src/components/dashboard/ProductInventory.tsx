@@ -10,7 +10,7 @@ import {
 } from '@/services/dashboardApi';
 
 export default function ProductInventory() {
-  const [selectedIdx, setSelectedIdx] = useState(0);
+  const [selectedIdx, setSelectedIdx] = useState(-1);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('전체');
   const [categoryLargeFilter, setCategoryLargeFilter] = useState('');
@@ -21,6 +21,17 @@ export default function ProductInventory() {
   const [products, setProducts] = useState<ProductSkuRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const savedSearch = sessionStorage.getItem('global_product_search');
+    if (savedSearch) {
+      setSearch(savedSearch);
+      sessionStorage.removeItem('global_product_search');
+    }
+    const handleGlobalSearch = (event: Event) => setSearch((event as CustomEvent<string>).detail);
+    window.addEventListener('global-product-search', handleGlobalSearch);
+    return () => window.removeEventListener('global-product-search', handleGlobalSearch);
+  }, []);
 
   // 안전재고 설정 모달 상태
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -57,7 +68,7 @@ export default function ProductInventory() {
     })
       .then((data) => {
         setProducts(data.products);
-        setSelectedIdx(0);
+        setSelectedIdx(-1);
       })
       .catch(() => setError('상품별 재고 데이터를 불러오지 못했습니다.'))
       .finally(() => setLoading(false));
@@ -67,8 +78,6 @@ export default function ProductInventory() {
     const term = search.toLowerCase();
     return !term || (p.product_name + p.sku_id).toLowerCase().includes(term);
   });
-
-  const p = filtered[selectedIdx] || filtered[0];
 
   const getBadgeStyle = (status: string) => {
     if (status === '품절 임박') return 'bg-[#FCE8E6] text-[#A83232]';
@@ -82,7 +91,7 @@ export default function ProductInventory() {
       <div className="flex justify-between items-start">
         <div>
           <h2 className="text-2xl font-extrabold tracking-tight">상품별 제품 재고 관리</h2>
-          <p className="text-xs text-[#8A8D96] mt-1">상품·SKU·옵션별 판매 속도, 안전재고, WOS, 클레임과 공급 조건을 확인합니다.</p>
+          <p className="text-xs text-[#8A8D96] mt-1">상품·SKU·옵션별 판매 속도, 안전재고, WOS와 클레임을 확인합니다.</p>
         </div>
         <div className="flex items-center gap-2">
           <span className="bg-white/80 border border-white/90 px-4 py-2.5 rounded-2xl text-xs font-semibold shadow-sm text-[#3F4145]">
@@ -173,7 +182,7 @@ export default function ProductInventory() {
       <div className="bg-white/40 backdrop-blur-md border border-white/60 p-6 rounded-[28px] shadow-sm space-y-3">
         <div>
           <h3 className="text-base font-bold text-[#3F4145]">상품·SKU 목록</h3>
-          <p className="text-[11px] text-[#8A8D96] mt-0.5">행을 선택하면 하단 상세 지표가 갱신됩니다.</p>
+          <p className="text-[11px] text-[#8A8D96] mt-0.5">상품·SKU 행을 누르면 현재고·안전재고·판매속도가 바로 펼쳐집니다.</p>
         </div>
 
         <div className="space-y-2 mt-3">
@@ -186,83 +195,39 @@ export default function ProductInventory() {
           {!loading && !error && filtered.map((item, idx) => {
             const isSelected = idx === selectedIdx;
             return (
-              <div
-                key={item.sku_id}
-                onClick={() => setSelectedIdx(idx)}
-                className={`grid grid-cols-8 gap-4 items-center p-4 rounded-2xl cursor-pointer transition text-xs ${
-                  isSelected ? 'bg-white/90 shadow-md border border-white' : 'bg-white/30 hover:bg-white/50 border border-transparent'
-                }`}
-              >
-                <div className="col-span-2">
-                  <div className="font-bold text-[#3F4145] text-sm">{item.product_name}</div>
-                  <div className="text-[11px] text-[#8A8D96] mt-0.5">{item.sku_id} · {item.color_name} · {item.size_code}</div>
-                </div>
-                <div><span className="text-[10px] text-[#8A8D96] block mb-0.5">가용</span><strong className="text-sm font-semibold">{item.available}</strong> EA</div>
-                <div><span className="text-[10px] text-[#8A8D96] block mb-0.5">안전</span><strong className="text-sm font-semibold">{item.safety_stock}</strong> EA</div>
-                <div><span className="text-[10px] text-[#8A8D96] block mb-0.5">WOS</span><strong className="text-sm font-semibold">{item.wos}</strong></div>
-                <div><span className="text-[10px] text-[#8A8D96] block mb-0.5">판매율</span><strong className="text-sm font-semibold">{item.sell_through}%</strong></div>
-                <div><span className="text-[10px] text-[#8A8D96] block mb-0.5">클레임</span><strong className="text-sm font-semibold">{item.claim_rate}%</strong></div>
-                <div>
-                  <span className={`inline-block px-3 py-1 rounded-full text-[11px] font-bold ${getBadgeStyle(item.risk_status)}`}>
-                    {item.risk_status}
-                  </span>
-                </div>
+              <div key={item.sku_id} className={`overflow-hidden rounded-2xl border transition ${isSelected ? 'bg-white/90 shadow-md border-white' : 'bg-white/30 hover:bg-white/50 border-transparent'}`}>
+                <button type="button" onClick={() => setSelectedIdx(isSelected ? -1 : idx)} aria-expanded={isSelected} className="grid w-full grid-cols-[minmax(0,2fr)_repeat(5,minmax(62px,1fr))_100px_24px] gap-4 items-center p-4 text-left text-xs">
+                  <div className="min-w-0">
+                    <div className="truncate font-bold text-[#3F4145] text-sm">{item.product_name}</div>
+                    <div className="truncate text-[11px] text-[#8A8D96] mt-0.5">{item.sku_id} · {item.color_name} · {item.size_code}</div>
+                  </div>
+                  <div><span className="text-[10px] text-[#8A8D96] block mb-0.5">가용</span><strong className="text-sm font-semibold">{item.available}</strong> EA</div>
+                  <div><span className="text-[10px] text-[#8A8D96] block mb-0.5">안전</span><strong className="text-sm font-semibold">{item.safety_stock}</strong> EA</div>
+                  <div><span className="text-[10px] text-[#8A8D96] block mb-0.5">WOS</span><strong className="text-sm font-semibold">{item.wos}</strong></div>
+                  <div><span className="text-[10px] text-[#8A8D96] block mb-0.5">판매율</span><strong className="text-sm font-semibold">{item.sell_through}%</strong></div>
+                  <div><span className="text-[10px] text-[#8A8D96] block mb-0.5">클레임</span><strong className="text-sm font-semibold">{item.claim_rate}%</strong></div>
+                  <span className={`inline-block px-3 py-1 rounded-full text-center text-[11px] font-bold ${getBadgeStyle(item.risk_status)}`}>{item.risk_status}</span>
+                  <span className={`text-base text-[#8A8D96] transition-transform ${isSelected ? 'rotate-180' : ''}`}>⌄</span>
+                </button>
+                {isSelected && (
+                  <div className="border-t border-[#E9E9EC] px-4 pb-4 pt-3">
+                    <div className="mb-3 flex items-center justify-between">
+                      <div><strong className="text-xs text-[#3F4145]">{item.product_name} · {item.sku_id}</strong><p className="mt-0.5 text-[10px] text-[#8A8D96]">현재고·안전재고·판매속도 상세</p></div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                      {[['현재 가용재고', item.available, 'EA'], ['안전재고', item.safety_stock, 'EA'], ['판매속도 (WOS)', item.wos, '주'], ['누적 판매율', item.sell_through, '%']].map(([label, value, unit]) => (
+                        <div key={String(label)} className="rounded-2xl border border-white bg-white/60 p-3.5 text-center">
+                          <span className="mb-1 block text-[10px] text-[#8A8D96]">{label}</span><strong className="text-lg text-[#3F4145]">{value}</strong> <span className="text-xs text-[#8A8D96]">{unit}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}
         </div>
       </div>
-
-      {/* 상세 지표 */}
-      {p && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          <div className="bg-white/40 backdrop-blur-md border border-white/60 p-6 rounded-[28px] shadow-sm">
-            <h3 className="text-base font-bold text-[#3F4145]">{p.product_name} 상세</h3>
-            <p className="text-[11px] text-[#8A8D96] mt-0.5 mb-4">현재고·안전재고·판매속도</p>
-            <div className="grid grid-cols-4 gap-3 text-center">
-              <div className="bg-white/50 p-3.5 rounded-2xl border border-white/60">
-                <span className="block text-[10px] text-[#8A8D96] mb-1">가용재고</span>
-                <span className="text-lg font-bold text-[#3F4145]">{p.available}</span> <span className="text-xs text-[#8A8D96]">EA</span>
-              </div>
-              <div className="bg-white/50 p-3.5 rounded-2xl border border-white/60">
-                <span className="block text-[10px] text-[#8A8D96] mb-1">안전재고</span>
-                <span className="text-lg font-bold text-[#3F4145]">{p.safety_stock}</span> <span className="text-xs text-[#8A8D96]">EA</span>
-              </div>
-              <div className="bg-white/50 p-3.5 rounded-2xl border border-white/60">
-                <span className="block text-[10px] text-[#8A8D96] mb-1">WOS</span>
-                <span className="text-lg font-bold text-[#3F4145]">{p.wos}</span> <span className="text-xs text-[#8A8D96]">주</span>
-              </div>
-              <div className="bg-white/50 p-3.5 rounded-2xl border border-white/60">
-                <span className="block text-[10px] text-[#8A8D96] mb-1">판매율</span>
-                <span className="text-lg font-bold text-[#3F4145]">{p.sell_through}</span> <span className="text-xs text-[#8A8D96]">%</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white/40 backdrop-blur-md border border-white/60 p-6 rounded-[28px] shadow-sm">
-            <h3 className="text-base font-bold text-[#3F4145]">공급 조건</h3>
-            <p className="text-[11px] text-[#8A8D96] mt-0.5 mb-4">입고 예정량·MOQ·리드타임</p>
-            <div className="grid grid-cols-4 gap-3 text-center">
-              <div className="bg-white/50 p-3.5 rounded-2xl border border-white/60">
-                <span className="block text-[10px] text-[#8A8D96] mb-1">입고 예정량</span>
-                <span className="text-lg font-bold text-[#3F4145]">{p.incoming}</span> <span className="text-xs text-[#8A8D96]">EA</span>
-              </div>
-              <div className="bg-white/50 p-3.5 rounded-2xl border border-white/60">
-                <span className="block text-[10px] text-[#8A8D96] mb-1">MOQ</span>
-                <span className="text-lg font-bold text-[#3F4145]">{p.moq}</span> <span className="text-xs text-[#8A8D96]">EA</span>
-              </div>
-              <div className="bg-white/50 p-3.5 rounded-2xl border border-white/60">
-                <span className="block text-[10px] text-[#8A8D96] mb-1">리드타임</span>
-                <span className="text-lg font-bold text-[#3F4145]">{p.lead_time}</span> <span className="text-xs text-[#8A8D96]">일</span>
-              </div>
-              <div className="bg-white/50 p-3.5 rounded-2xl border border-white/60">
-                <span className="block text-[10px] text-[#8A8D96] mb-1">클레임률</span>
-                <span className="text-lg font-bold text-[#3F4145]">{p.claim_rate}</span> <span className="text-xs text-[#8A8D96]">%</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* 안전재고 설정 모달 팝업 */}
       {isModalOpen && (

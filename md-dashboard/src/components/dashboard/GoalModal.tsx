@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || '/backend';
 
 export type GoalUnit = 'day' | 'week' | 'month' | 'year';
 
