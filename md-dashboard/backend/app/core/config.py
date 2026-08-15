@@ -79,6 +79,11 @@ class Settings(BaseSettings):
     def DATABASE_URL(self) -> str:
         driver = "ODBC Driver 17 for SQL Server"
         server = "localhost" if self.USE_LOCAL else self.DB_SERVER
+        encryption_options = (
+            "Encrypt=yes;TrustServerCertificate=yes;"
+            if self.USE_LOCAL
+            else "Encrypt=yes;TrustServerCertificate=no;"
+        )
 
         params = quote_plus(
             f"DRIVER={{{driver}}};"
@@ -86,9 +91,8 @@ class Settings(BaseSettings):
             f"DATABASE={self.DB_NAME};"
             f"UID={self.DB_USER};"
             f"PWD={self.DB_PASSWORD};"
-            f"Encrypt=yes;"
-            f"TrustServerCertificate=no;"
-            f"Connection Timeout=30;"
+            + encryption_options
+            + f"Connection Timeout=30;"
         )
         return f"mssql+pyodbc:///?odbc_connect={params}"
 
