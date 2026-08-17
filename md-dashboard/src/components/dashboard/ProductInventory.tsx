@@ -8,6 +8,7 @@ import {
   getProductInventory, getProductFilterOptions,
   ProductSkuRow, ProductFilterOptionsData,
 } from '@/services/dashboardApi';
+import FilterSummaryBar from './FilterSummaryBar';
 
 export default function ProductInventory() {
   const [selectedIdx, setSelectedIdx] = useState(-1);
@@ -62,7 +63,6 @@ export default function ProductInventory() {
       category_large: categoryLargeFilter || undefined,
       category_middle: categoryMiddleFilter || undefined,
       sku_id: skuFilter || undefined,
-      risk_status: statusFilter !== '전체' ? statusFilter : undefined,
       service_level: Number(serviceLevel),
       leadtime_factor: Number(leadTimeFactor),
     })
@@ -72,43 +72,84 @@ export default function ProductInventory() {
       })
       .catch(() => setError('상품별 재고 데이터를 불러오지 못했습니다.'))
       .finally(() => setLoading(false));
-  }, [categoryLargeFilter, categoryMiddleFilter, skuFilter, statusFilter, serviceLevel, leadTimeFactor]);
+  }, [categoryLargeFilter, categoryMiddleFilter, skuFilter, serviceLevel, leadTimeFactor]);
 
-  const filtered = products.filter(p => {
+  const searchMatched = products.filter(p => {
     const term = search.toLowerCase();
     return !term || (p.product_name + p.sku_id).toLowerCase().includes(term);
   });
+  const filtered = searchMatched.filter((item) => statusFilter === '전체' || item.risk_status === statusFilter);
+  const totalAvailable = searchMatched.reduce((sum, item) => sum + item.available, 0);
+  const shortageCount = searchMatched.filter((item) => item.risk_status === '품절 임박').length;
+  const excessCount = searchMatched.filter((item) => item.risk_status === '과잉재고').length;
+  const longTermCount = searchMatched.filter((item) => item.risk_status === '장기재고').length;
 
   const getBadgeStyle = (status: string) => {
-    if (status === '품절 임박') return 'bg-[#FCE8E6] text-[#A83232]';
-    if (status === '장기재고') return 'bg-[#FEF3D6] text-[#8C6B1B]';
-    return 'bg-[#E3EFFC] text-[#2D5A88]';
+    if (status === '품절 임박') return 'bg-[#F3E4C9] text-[#704D1D]';
+    if (status === '과잉재고' || status === '장기재고') return 'bg-[#EED7D7] text-[#7D3E3E]';
+    return 'bg-[#E2F3E9] text-[#397255]';
   };
 
   return (
     <div className="space-y-5 text-[#3F4145] relative">
-      {/* 상단 제목 및 우측 버튼 영역 */}
-      <div className="flex justify-between items-start">
+      {/* 페이지 제목 및 우측 버튼 영역 */}
+      <div className="flex items-start justify-between">
         <div>
-          <h2 className="text-2xl font-extrabold tracking-tight">상품별 제품 재고 관리</h2>
-          <p className="text-xs text-[#8A8D96] mt-1">상품·SKU·옵션별 판매 속도, 안전재고, WOS와 클레임을 확인합니다.</p>
+          <h2 className="page-on-dark-title text-2xl font-extrabold tracking-tight">상품별 제품 재고 관리</h2>
+          <p className="page-on-dark-copy mt-1 text-xs">상품·SKU·옵션별 판매 속도, 안전재고, WOS와 클레임을 확인합니다.</p>
         </div>
         <div className="flex items-center gap-2">
-          <span className="bg-white/80 border border-white/90 px-4 py-2.5 rounded-2xl text-xs font-semibold shadow-sm text-[#3F4145]">
+          <span className="rounded-2xl border border-white/90 bg-white/80 px-4 py-2.5 text-xs font-semibold text-[#3F4145] shadow-sm">
             안전재고 서비스 수준 {serviceLevel}%
           </span>
-          <button 
+          <button
             onClick={() => setIsModalOpen(true)}
-            className="bg-white/90 hover:bg-white border border-white/90 px-4 py-2.5 rounded-2xl text-xs font-bold shadow-sm text-[#3F4145] transition cursor-pointer"
+            className="cursor-pointer rounded-2xl border border-white/90 bg-white/90 px-4 py-2.5 text-xs font-bold text-[#3F4145] shadow-sm transition hover:bg-white"
           >
             안전재고 설정
           </button>
         </div>
       </div>
 
+      <section id="product-filters" className="material-glass-filter radius-frame-28-p16 scroll-mt-4 rounded-[28px] border border-white/60 bg-white/40 p-4 shadow-sm backdrop-blur-md" aria-label="상품 재고 필터">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <label><span className="mb-1 block text-[10px] font-bold text-[#8A8D96]">상품 검색</span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="상품명 또는 SKU" className="w-full rounded-2xl border border-white/80 bg-white/70 px-3.5 py-2.5 text-xs outline-none" /></label>
+          <label><span className="mb-1 block text-[10px] font-bold text-[#8A8D96]">위험 상태</span><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="w-full rounded-2xl border border-white/80 bg-white/70 px-3.5 py-2.5 text-xs outline-none"><option>전체</option><option>품절 임박</option><option>과잉재고</option><option>장기재고</option><option>정상</option></select></label>
+          <label><span className="mb-1 block text-[10px] font-bold text-[#8A8D96]">대분류</span><select value={categoryLargeFilter} onChange={(event) => handleCategoryLargeChange(event.target.value)} className="w-full rounded-2xl border border-white/80 bg-white/70 px-3.5 py-2.5 text-xs outline-none"><option value="">전체</option>{filterOptions?.category_large.map((category) => <option key={category} value={category}>{category}</option>)}</select></label>
+          <label><span className="mb-1 block text-[10px] font-bold text-[#8A8D96]">중분류</span><select value={categoryMiddleFilter} onChange={(event) => { setCategoryMiddleFilter(event.target.value); setSkuFilter(''); }} className="w-full rounded-2xl border border-white/80 bg-white/70 px-3.5 py-2.5 text-xs outline-none"><option value="">전체</option>{filterOptions?.category_middle.map((category) => <option key={category} value={category}>{category}</option>)}</select></label>
+          <label><span className="mb-1 block text-[10px] font-bold text-[#8A8D96]">SKU</span><select value={skuFilter} onChange={(event) => setSkuFilter(event.target.value)} className="w-full rounded-2xl border border-white/80 bg-white/70 px-3.5 py-2.5 text-xs outline-none"><option value="">전체</option>{filterOptions?.skus.map((sku) => <option key={sku.sku_id} value={sku.sku_id}>{sku.sku_id} · {sku.color_name} · {sku.size_code}</option>)}</select></label>
+        </div>
+      </section>
+
+      <FilterSummaryBar targetId="product-filters" items={[
+        { label: '상품 검색', value: search || '전체 상품' },
+        { label: '위험 상태', value: statusFilter },
+        { label: '대분류', value: categoryLargeFilter || '전체' },
+        { label: '중분류', value: categoryMiddleFilter || '전체' },
+        { label: 'SKU', value: skuFilter || '전체' },
+      ]} editor={
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-5">
+          <label><span className="mb-1 block text-[10px] font-bold text-[#8A8D96]">상품 검색</span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="상품명 또는 SKU" className="w-full rounded-2xl border border-white/80 bg-white/80 px-3 py-2 text-xs outline-none" /></label>
+          <label><span className="mb-1 block text-[10px] font-bold text-[#8A8D96]">위험 상태</span><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="w-full rounded-2xl border border-white/80 bg-white/80 px-3 py-2 text-xs outline-none"><option>전체</option><option>품절 임박</option><option>과잉재고</option><option>장기재고</option><option>정상</option></select></label>
+          <label><span className="mb-1 block text-[10px] font-bold text-[#8A8D96]">대분류</span><select value={categoryLargeFilter} onChange={(event) => handleCategoryLargeChange(event.target.value)} className="w-full rounded-2xl border border-white/80 bg-white/80 px-3 py-2 text-xs outline-none"><option value="">전체</option>{filterOptions?.category_large.map((category) => <option key={category} value={category}>{category}</option>)}</select></label>
+          <label><span className="mb-1 block text-[10px] font-bold text-[#8A8D96]">중분류</span><select value={categoryMiddleFilter} onChange={(event) => { setCategoryMiddleFilter(event.target.value); setSkuFilter(''); }} className="w-full rounded-2xl border border-white/80 bg-white/80 px-3 py-2 text-xs outline-none"><option value="">전체</option>{filterOptions?.category_middle.map((category) => <option key={category} value={category}>{category}</option>)}</select></label>
+          <label><span className="mb-1 block text-[10px] font-bold text-[#8A8D96]">SKU</span><select value={skuFilter} onChange={(event) => setSkuFilter(event.target.value)} className="w-full rounded-2xl border border-white/80 bg-white/80 px-3 py-2 text-xs outline-none"><option value="">전체</option>{filterOptions?.skus.map((sku) => <option key={sku.sku_id} value={sku.sku_id}>{sku.sku_id} · {sku.color_name} · {sku.size_code}</option>)}</select></label>
+        </div>
+      } />
+
+      <section className="radius-frame-28-p20 rounded-[28px] bg-white/40 p-5" aria-labelledby="product-summary-title">
+        <div className="mb-3 flex items-center justify-between"><h3 id="product-summary-title" className="text-sm font-extrabold text-[#3F4145]">상품별 재고 요약</h3><span className="text-[10px] font-semibold text-[#8A8D96]">현재 필터 기준</span></div>
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <div className="rounded-[18px] bg-[#E6E8EB] p-4 text-center text-[#42464D]"><p className="text-[10px] font-extrabold opacity-70">가용재고</p><p className="mt-1 text-2xl font-black tabular-nums">{loading ? '—' : totalAvailable.toLocaleString('ko-KR')}</p><p className="text-[9px] font-bold opacity-60">EA</p></div>
+          <button type="button" onClick={() => setStatusFilter('품절 임박')} className="rounded-[18px] bg-[#F3E4C9] p-4 text-center text-[#704D1D] transition hover:-translate-y-0.5" title="품절 임박 상품만 보기"><p className="text-[10px] font-extrabold opacity-75">품절 임박 SKU</p><p className="mt-1 text-2xl font-black tabular-nums">{loading ? '—' : shortageCount.toLocaleString('ko-KR')}</p><p className="text-[9px] font-bold opacity-65">SKU · 눌러서 필터</p></button>
+          <button type="button" onClick={() => setStatusFilter('과잉재고')} className="rounded-[18px] bg-[#EED7D7] p-4 text-center text-[#7D3E3E] transition hover:-translate-y-0.5" title="과잉재고 상품만 보기"><p className="text-[10px] font-extrabold opacity-75">과잉재고 SKU</p><p className="mt-1 text-2xl font-black tabular-nums">{loading ? '—' : excessCount.toLocaleString('ko-KR')}</p><p className="text-[9px] font-bold opacity-65">SKU · 눌러서 필터</p></button>
+          <button type="button" onClick={() => setStatusFilter('장기재고')} className="rounded-[18px] bg-[#EED7D7] p-4 text-center text-[#7D3E3E] transition hover:-translate-y-0.5" title="장기재고 상품만 보기"><p className="text-[10px] font-extrabold opacity-75">장기재고 SKU</p><p className="mt-1 text-2xl font-black tabular-nums">{loading ? '—' : longTermCount.toLocaleString('ko-KR')}</p><p className="text-[9px] font-bold opacity-65">SKU · 눌러서 필터</p></button>
+        </div>
+      </section>
+
       {/* 필터 영역 */}
       {/* 필터 영역 */}
-      <div className="bg-white/40 backdrop-blur-md border border-white/60 p-5 rounded-[28px] shadow-sm">
+      <div className="radius-frame-28-p20 bg-white/40 backdrop-blur-md border border-white/60 p-5 rounded-[28px] shadow-sm">
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <div>
             <label className="block text-[11px] font-medium text-[#8A8D96] mb-1.5">상품 검색</label>
@@ -179,7 +220,7 @@ export default function ProductInventory() {
       </div>
 
       {/* 상품·SKU 목록 */}
-      <div className="bg-white/40 backdrop-blur-md border border-white/60 p-6 rounded-[28px] shadow-sm space-y-3">
+      <div className="radius-frame-28-p24 bg-white/40 backdrop-blur-md border border-white/60 p-6 rounded-[28px] shadow-sm space-y-3">
         <div>
           <h3 className="text-base font-bold text-[#3F4145]">상품·SKU 목록</h3>
           <p className="text-[11px] text-[#8A8D96] mt-0.5">상품·SKU 행을 누르면 현재고·안전재고·판매속도가 바로 펼쳐집니다.</p>
@@ -247,6 +288,7 @@ export default function ProductInventory() {
                       key={lvl}
                       type="button"
                       onClick={() => setServiceLevel(lvl)}
+                      aria-pressed={serviceLevel === lvl}
                       className={`py-2 rounded-xl text-xs font-bold transition ${
                         serviceLevel === lvl 
                           ? 'bg-[#3F4145] text-white' 

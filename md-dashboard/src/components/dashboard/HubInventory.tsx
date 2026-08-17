@@ -2,8 +2,9 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
-import { getHubInventory, HubCardData, getHubTransferRecommendation, TransferRecommendation } from '@/services/dashboardApi';
+import { Fragment, useState, useEffect, useRef } from 'react';
+import { getHubInventory, HubCardData, getHubTransferRecommendation, TransferRecommendation, getHubProductInventory, type HubProductInventoryItem } from '@/services/dashboardApi';
+import FilterSummaryBar from './FilterSummaryBar';
 
 function getInventoryStatus(wos: number) {
   if (wos < 4) {
@@ -35,12 +36,21 @@ function getTransferKey(transfer: TransferRecommendation) {
 }
 
 export default function HubInventory() {
+  const productsSectionRef = useRef<HTMLElement>(null);
   const [selectedHub, setSelectedHub] = useState(0);
   const [hubs, setHubs] = useState<HubCardData[]>([]);
   const [transfers, setTransfers] = useState<TransferRecommendation[]>([]);
+  const [hubProducts, setHubProducts] = useState<HubProductInventoryItem[]>([]);
+  const [productsLoading, setProductsLoading] = useState(false);
+  const [selectedCategoryLarge, setSelectedCategoryLarge] = useState('전체');
+  const [selectedCategoryMiddle, setSelectedCategoryMiddle] = useState('전체');
+  const [selectedSku, setSelectedSku] = useState('전체');
+  const [inventorySort, setInventorySort] = useState<'desc' | 'asc'>('desc');
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [executedTransfers, setExecutedTransfers] = useState<Record<string, string>>({});
+  const [productWorkflows, setProductWorkflows] = useState<Record<string, { assignee: string; status: string }>>({});
+  const [expandedWorkItem, setExpandedWorkItem] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -56,6 +66,30 @@ export default function HubInventory() {
 
   useEffect(() => {
     try {
+      const saved = window.localStorage.getItem('hub_product_workflow_status');
+      if (saved) setProductWorkflows(JSON.parse(saved));
+    } catch {
+      // 저장값이 손상된 경우 기본 상태를 사용합니다.
+    }
+  }, []);
+
+  useEffect(() => {
+    const hub = hubs[selectedHub];
+    if (!hub) return;
+    let active = true;
+    setProductsLoading(true);
+    setSelectedCategoryLarge('전체');
+    setSelectedCategoryMiddle('전체');
+    setSelectedSku('전체');
+    getHubProductInventory(hub.hub_id)
+      .then((data) => { if (active) setHubProducts(data.products); })
+      .catch(() => { if (active) setHubProducts([]); })
+      .finally(() => { if (active) setProductsLoading(false); });
+    return () => { active = false; };
+  }, [hubs, selectedHub]);
+
+  useEffect(() => {
+    try {
       const saved = window.localStorage.getItem('hub_transfer_execution_status');
       if (saved) setExecutedTransfers(JSON.parse(saved));
     } catch {
@@ -64,6 +98,24 @@ export default function HubInventory() {
   }, []);
 
   const maxSpeed = hubs.length ? Math.max(...hubs.map(h => h.speed_per_day)) : 1;
+  const totalAvailable = hubs.reduce((sum, hub) => sum + hub.available, 0);
+  const totalReserved = hubs.reduce((sum, hub) => sum + hub.reserved, 0);
+  const totalInTransit = hubs.reduce((sum, hub) => sum + hub.in_transit, 0);
+  const largeCategories = [...new Set(hubProducts.map((item) => item.category_large).filter((value): value is string => Boolean(value)))].sort();
+  const middleCategories = [...new Set(hubProducts
+    .filter((item) => selectedCategoryLarge === '전체' || item.category_large === selectedCategoryLarge)
+    .map((item) => item.category_middle)
+    .filter((value): value is string => Boolean(value)))].sort();
+  const skuOptions = [...new Set(hubProducts
+    .filter((item) => selectedCategoryLarge === '전체' || item.category_large === selectedCategoryLarge)
+    .filter((item) => selectedCategoryMiddle === '전체' || item.category_middle === selectedCategoryMiddle)
+    .flatMap((item) => item.sku_ids ?? []))].sort();
+  const visibleHubProducts = hubProducts.filter((item) => {
+    const matchesLarge = selectedCategoryLarge === '전체' || item.category_large === selectedCategoryLarge;
+    const matchesMiddle = selectedCategoryMiddle === '전체' || item.category_middle === selectedCategoryMiddle;
+    const matchesSku = selectedSku === '전체' || (item.sku_ids ?? []).includes(selectedSku);
+    return matchesLarge && matchesMiddle && matchesSku;
+  }).sort((a, b) => inventorySort === 'desc' ? b.available - a.available : a.available - b.available);
 
   const updateTransferExecution = (transfer: TransferRecommendation, execute: boolean) => {
     const action = execute ? '이동 실행 요청' : '이동 요청 취소';
@@ -75,6 +127,13 @@ export default function HubInventory() {
     else delete next[key];
     setExecutedTransfers(next);
     window.localStorage.setItem('hub_transfer_execution_status', JSON.stringify(next));
+  };
+
+  const updateProductWorkflow = (key: string, field: 'assignee' | 'status', value: string) => {
+    const current = productWorkflows[key] ?? { assignee: '미지정', status: '미처리' };
+    const next = { ...productWorkflows, [key]: { ...current, [field]: value } };
+    setProductWorkflows(next);
+    window.localStorage.setItem('hub_product_workflow_status', JSON.stringify(next));
   };
 
   const handleExcelDownload = async () => {
@@ -171,36 +230,76 @@ export default function HubInventory() {
 
   return (
     <div className="space-y-6">
-      {/* 상단 타이틀 영역 */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      {/* 페이지 타이틀 영역 */}
+      <div className="page-on-dark-header flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
         <div>
-          <h2 className="text-2xl font-extrabold text-[#3F4145]">HUB별 제품 재고 관리</h2>
-          <p className="text-xs text-[#8A8D96] mt-1">세 HUB의 재고량, 판매 속도, WOS와 위험 상태를 비교하고 HUB 이동 가능성을 검토합니다.</p>
+          <h2 className="page-on-dark-title text-2xl font-extrabold">HUB별 제품 재고 관리</h2>
+          <p className="page-on-dark-copy mt-1 text-xs">세 HUB의 재고량, 판매 속도, WOS와 위험 상태를 비교하고 HUB 이동 가능성을 검토합니다.</p>
         </div>
         <div className="flex items-center gap-3">
-          <span className="bg-white/60 border border-white/80 px-3 py-2 rounded-2xl text-xs font-semibold shadow-sm">목표재고 4주</span>
-          <button 
+          <span className="rounded-2xl border border-white/80 bg-white/60 px-3 py-2 text-xs font-semibold shadow-sm">목표재고 4주</span>
+          <button
             onClick={() => document.getElementById('transferSection')?.scrollIntoView({ behavior: 'smooth' })}
-            className="bg-white/80 border border-white rounded-2xl px-4 py-2 text-xs font-extrabold shadow-sm hover:bg-white transition"
+            className="rounded-2xl border border-white bg-white/80 px-4 py-2 text-xs font-extrabold shadow-sm transition hover:bg-white"
           >
             이동 요청 보기
           </button>
         </div>
       </div>
 
+      <section id="hub-filters" className="material-glass-filter radius-frame-28-p16 scroll-mt-4 rounded-[28px] border border-white/60 bg-white/40 p-4 shadow-sm backdrop-blur-md" aria-label="HUB 재고 필터">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <label><span className="mb-1 block text-[10px] font-bold text-[#8A8D96]">HUB</span><select value={selectedHub} onChange={(event) => setSelectedHub(Number(event.target.value))} className="w-full rounded-2xl border border-white/80 bg-white/70 px-3.5 py-2.5 text-xs outline-none">{hubs.map((hub, index) => <option key={hub.hub_id} value={index}>{hub.hub_name}</option>)}</select></label>
+          <label><span className="mb-1 block text-[10px] font-bold text-[#8A8D96]">재고 정렬</span><select value={inventorySort} onChange={(event) => setInventorySort(event.target.value as typeof inventorySort)} className="w-full rounded-2xl border border-white/80 bg-white/70 px-3.5 py-2.5 text-xs outline-none"><option value="desc">재고 많은 순</option><option value="asc">재고 적은 순</option></select></label>
+          <label><span className="mb-1 block text-[10px] font-bold text-[#8A8D96]">대카테고리</span><select value={selectedCategoryLarge} onChange={(event) => { setSelectedCategoryLarge(event.target.value); setSelectedCategoryMiddle('전체'); setSelectedSku('전체'); }} className="w-full rounded-2xl border border-white/80 bg-white/70 px-3.5 py-2.5 text-xs outline-none"><option value="전체">전체</option>{largeCategories.map((category) => <option key={category} value={category}>{category}</option>)}</select></label>
+          <label><span className="mb-1 block text-[10px] font-bold text-[#8A8D96]">중카테고리</span><select value={selectedCategoryMiddle} onChange={(event) => { setSelectedCategoryMiddle(event.target.value); setSelectedSku('전체'); }} className="w-full rounded-2xl border border-white/80 bg-white/70 px-3.5 py-2.5 text-xs outline-none"><option value="전체">전체</option>{middleCategories.map((category) => <option key={category} value={category}>{category}</option>)}</select></label>
+          <label><span className="mb-1 block text-[10px] font-bold text-[#8A8D96]">SKU</span><select value={selectedSku} onChange={(event) => setSelectedSku(event.target.value)} className="w-full rounded-2xl border border-white/80 bg-white/70 px-3.5 py-2.5 text-xs outline-none"><option value="전체">전체</option>{skuOptions.map((sku) => <option key={sku} value={sku}>{sku}</option>)}</select></label>
+        </div>
+      </section>
+
+      <FilterSummaryBar targetId="hub-filters" items={[
+        { label: 'HUB', value: hubs[selectedHub]?.hub_name ?? '미선택' },
+        { label: '재고 정렬', value: inventorySort === 'desc' ? '재고 많은 순' : '재고 적은 순' },
+        { label: '대카테고리', value: selectedCategoryLarge },
+        { label: '중카테고리', value: selectedCategoryMiddle },
+        { label: 'SKU', value: selectedSku },
+      ]} editor={
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-5">
+          <label><span className="mb-1 block text-[10px] font-bold text-[#8A8D96]">HUB</span><select value={selectedHub} onChange={(event) => setSelectedHub(Number(event.target.value))} className="w-full rounded-2xl border border-white/80 bg-white/80 px-3 py-2 text-xs outline-none">{hubs.map((hub, index) => <option key={hub.hub_id} value={index}>{hub.hub_name}</option>)}</select></label>
+          <label><span className="mb-1 block text-[10px] font-bold text-[#8A8D96]">재고 정렬</span><select value={inventorySort} onChange={(event) => setInventorySort(event.target.value as typeof inventorySort)} className="w-full rounded-2xl border border-white/80 bg-white/80 px-3 py-2 text-xs outline-none"><option value="desc">재고 많은 순</option><option value="asc">재고 적은 순</option></select></label>
+          <label><span className="mb-1 block text-[10px] font-bold text-[#8A8D96]">대카테고리</span><select value={selectedCategoryLarge} onChange={(event) => { setSelectedCategoryLarge(event.target.value); setSelectedCategoryMiddle('전체'); setSelectedSku('전체'); }} className="w-full rounded-2xl border border-white/80 bg-white/80 px-3 py-2 text-xs outline-none"><option value="전체">전체</option>{largeCategories.map((category) => <option key={category} value={category}>{category}</option>)}</select></label>
+          <label><span className="mb-1 block text-[10px] font-bold text-[#8A8D96]">중카테고리</span><select value={selectedCategoryMiddle} onChange={(event) => { setSelectedCategoryMiddle(event.target.value); setSelectedSku('전체'); }} className="w-full rounded-2xl border border-white/80 bg-white/80 px-3 py-2 text-xs outline-none"><option value="전체">전체</option>{middleCategories.map((category) => <option key={category} value={category}>{category}</option>)}</select></label>
+          <label><span className="mb-1 block text-[10px] font-bold text-[#8A8D96]">SKU</span><select value={selectedSku} onChange={(event) => setSelectedSku(event.target.value)} className="w-full rounded-2xl border border-white/80 bg-white/80 px-3 py-2 text-xs outline-none"><option value="전체">전체</option>{skuOptions.map((sku) => <option key={sku} value={sku}>{sku}</option>)}</select></label>
+        </div>
+      } />
+
+      <section className="rounded-[32px] border border-white/70 bg-white/30 p-5 shadow-sm backdrop-blur-md" aria-labelledby="hub-summary-title">
+        <div className="mb-3 flex items-center justify-between"><div><h3 id="hub-summary-title" className="text-base font-extrabold text-[#3F4145]">허브별 재고 요약</h3><p className="mt-1 text-[11px] font-semibold text-[#8A8D96]">전체 HUB의 재고 상태를 합산합니다.</p></div><span className="rounded-full bg-white/60 px-3 py-1.5 text-[10px] font-semibold text-[#8A8D96]">전체 HUB 합산</span></div>
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+          {[
+            ['보유재고', totalAvailable + totalReserved, '가용 + 예약'], ['가용재고', totalAvailable, '즉시 출고 가능'],
+            ['예약재고', totalReserved, '주문 할당 수량'], ['이동 중', totalInTransit, 'HUB 간 이동 수량'],
+          ].map(([label, value, description]) => <article key={String(label)} className="radius-frame-28-p20 rounded-[28px] border border-white/70 bg-white/50 p-5 shadow-sm backdrop-blur-xl"><p className="text-[11px] font-medium text-[#8A8D96]">전체 HUB</p><h4 className="mt-1 text-sm font-extrabold text-[#3F4145]">{label}</h4><p className="mt-3 text-2xl font-black tabular-nums text-[#3F4145]">{Number(value).toLocaleString('ko-KR')} <span className="text-xs font-bold text-[#8A8D96]">EA</span></p><p className="mt-1 text-[10px] font-semibold text-[#65676E]">{description}</p></article>)}
+        </div>
+      </section>
+
       {/* HUB 카드 3종 */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {hubs.map((hub, idx) => (
           <div
             key={hub.hub_id}
-            onClick={() => setSelectedHub(idx)}
-            className={`p-5 rounded-[28px] border backdrop-blur-xl transition cursor-pointer shadow-sm ${
+            onClick={() => { setSelectedHub(idx); window.setTimeout(() => productsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50); }}
+            role="button"
+            tabIndex={0}
+            aria-pressed={selectedHub === idx}
+            onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedHub(idx); window.setTimeout(() => productsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50); } }}
+            className={`radius-frame-28-p20 p-5 rounded-[28px] border backdrop-blur-xl transition cursor-pointer shadow-sm ${
               selectedHub === idx 
                 ? 'bg-white/80 border-[#3F4145]/40 ring-2 ring-[#3F4145]/20' 
                 : 'bg-white/50 border-white/70 hover:bg-white/60'
             }`}
           >
-            <div className="text-[11px] text-[#8A8D96] font-medium">{hub.hub_id}</div>
+            <div className="flex items-center justify-between"><span className="text-[11px] text-[#8A8D96] font-medium">{hub.hub_id}</span>{selectedHub === idx && <span className="rounded-full bg-[#4F7761] px-2 py-1 text-[9px] font-extrabold text-white">✓ 선택됨</span>}</div>
             <div className="text-xl font-extrabold text-[#3F4145] mt-1">{hub.hub_name}</div>
             <div className="text-xs text-[#65676E] mt-1">가용재고 {hub.available.toLocaleString()} EA · WOS {hub.wos}주</div>
             <div className="grid grid-cols-3 gap-2 mt-4">
@@ -221,8 +320,33 @@ export default function HubInventory() {
         ))}
       </div>
 
+      {hubs[selectedHub] && (
+        <section ref={productsSectionRef} className="radius-frame-28-p20 scroll-mt-20 rounded-[28px] bg-white/45 p-5" aria-labelledby="selected-hub-products-title">
+          <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+            <div><div className="flex flex-wrap items-center gap-2"><h3 id="selected-hub-products-title" className="text-base font-extrabold text-[#3F4145]">{hubs[selectedHub].hub_name} 보유 상품</h3><span className="rounded-full bg-[#E6E8EB] px-2.5 py-1 text-[9px] font-extrabold text-[#5E626A]">상품 {hubProducts.length.toLocaleString()}종</span><span className="rounded-full bg-[#E6E8EB] px-2.5 py-1 text-[9px] font-extrabold text-[#5E626A]">가용 {hubProducts.reduce((sum, item) => sum + item.available, 0).toLocaleString()} EA</span></div><p className="mt-1 text-[11px] font-semibold text-[#8A8D96]">기존 재고 지표와 발주·이동·담당 업무 정보를 함께 확인합니다.</p></div>
+          </div>
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            <select aria-label="보유 상품 대카테고리" value={selectedCategoryLarge} onChange={(event) => { setSelectedCategoryLarge(event.target.value); setSelectedCategoryMiddle('전체'); setSelectedSku('전체'); }} className="min-w-40 rounded-xl bg-white/70 px-3 py-2 text-[10px] font-bold text-[#4C4F56] outline-none"><option value="전체">대카테고리: 전체</option>{largeCategories.map((category) => <option key={category} value={category}>{category}</option>)}</select>
+            <select aria-label="보유 상품 중카테고리" value={selectedCategoryMiddle} onChange={(event) => { setSelectedCategoryMiddle(event.target.value); setSelectedSku('전체'); }} className="min-w-40 rounded-xl bg-white/70 px-3 py-2 text-[10px] font-bold text-[#4C4F56] outline-none"><option value="전체">중카테고리: 전체</option>{middleCategories.map((category) => <option key={category} value={category}>{category}</option>)}</select>
+            <select aria-label="보유 상품 SKU" value={selectedSku} onChange={(event) => setSelectedSku(event.target.value)} className="min-w-40 rounded-xl bg-white/70 px-3 py-2 text-[10px] font-bold text-[#4C4F56] outline-none"><option value="전체">SKU: 전체</option>{skuOptions.map((sku) => <option key={sku} value={sku}>{sku}</option>)}</select>
+            <div className="flex rounded-xl bg-black/5 p-1" aria-label="재고 수량 정렬">
+              <button type="button" aria-pressed={inventorySort === 'desc'} onClick={() => setInventorySort('desc')} className={`rounded-lg px-3 py-1.5 text-[10px] font-extrabold ${inventorySort === 'desc' ? 'bg-white text-[#3F4145] shadow-sm' : 'text-[#777B84]'}`}>재고 많은 순</button>
+              <button type="button" aria-pressed={inventorySort === 'asc'} onClick={() => setInventorySort('asc')} className={`rounded-lg px-3 py-1.5 text-[10px] font-extrabold ${inventorySort === 'asc' ? 'bg-white text-[#3F4145] shadow-sm' : 'text-[#777B84]'}`}>재고 적은 순</button>
+            </div>
+            <span className="text-[10px] font-semibold text-[#8A8D96]">{visibleHubProducts.length.toLocaleString()}개 상품 표시</span>
+          </div>
+          {productsLoading ? <div className="space-y-2">{Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-12 animate-pulse rounded-xl bg-black/5" />)}</div> : (() => {
+            return visibleHubProducts.length ? <div className="max-h-[34rem] overflow-auto rounded-2xl bg-white/35"><table className="w-full min-w-[980px] text-xs tabular-nums"><thead className="sticky top-0 z-10 bg-[#EEF0F3] text-[#747880]"><tr><th className="px-4 py-3 text-left">상품명</th><th className="px-4 py-3 text-left">선택 카테고리</th><th className="px-4 py-3 text-left">상품 ID</th><th className="px-4 py-3 text-right">가용재고</th><th className="px-4 py-3 text-right">안전재고</th><th className="px-4 py-3 text-right">부족·초과</th><th className="px-4 py-3 text-right">28일 판매량</th><th className="px-4 py-3 text-right">WOS</th><th className="px-4 py-3 text-center">업무 정보</th></tr></thead><tbody>{visibleHubProducts.map((item) => {
+              const workflowKey = `${hubs[selectedHub].hub_id}|${item.product_id}`;
+              const workflow = productWorkflows[workflowKey] ?? { assignee: '미지정', status: '미처리' };
+              return <Fragment key={`${item.product_id}-${item.category_small ?? ''}`}><tr className="border-t border-black/5"><td className="px-4 py-3 font-bold text-[#3F4145]">{item.product_name}</td><td className="px-4 py-3 text-[#656970]">{[item.category_large, item.category_middle].filter(Boolean).join(' / ') || '미분류'}</td><td className="px-4 py-3 text-[#777B84]">{item.product_id}</td><td className="px-4 py-3 text-right font-extrabold">{item.available.toLocaleString()} EA</td><td className="px-4 py-3 text-right text-[#656970]">{item.safety_stock.toLocaleString()} EA</td><td className={`px-4 py-3 text-right font-extrabold ${item.stock_gap < 0 ? 'text-[#A84C4C]' : 'text-[#397255]'}`}>{item.stock_gap > 0 ? '+' : ''}{item.stock_gap.toLocaleString()} EA</td><td className="px-4 py-3 text-right text-[#656970]">{item.sales_28d.toLocaleString()}개</td><td className="px-4 py-3 text-right"><span className={`rounded-full px-2 py-1 font-extrabold ${item.wos === 0 || item.wos < 4 ? 'bg-[#F3E4C9] text-[#704D1D]' : item.wos > 12 ? 'bg-[#EED7D7] text-[#7D3E3E]' : 'bg-[#E2F3E9] text-[#397255]'}`}>{item.wos > 0 ? `${item.wos}주` : '판매 없음'}</span></td><td className="px-4 py-3 text-center"><button type="button" aria-expanded={expandedWorkItem === workflowKey} onClick={() => setExpandedWorkItem(expandedWorkItem === workflowKey ? null : workflowKey)} className="rounded-lg bg-white/75 px-3 py-1.5 font-extrabold text-[#4F5258]">상세 보기 <span className={`inline-block transition-transform ${expandedWorkItem === workflowKey ? 'rotate-180' : ''}`}>⌄</span></button></td></tr>{expandedWorkItem === workflowKey && <tr className="border-t border-black/5 bg-white/30"><td colSpan={9} className="px-4 py-3"><div className="grid gap-3 rounded-2xl bg-white/65 p-4 sm:grid-cols-2 lg:grid-cols-4"><div><span className="text-[10px] font-bold text-[#8A8D96]">일평균 판매량</span><strong className="mt-1 block text-sm text-[#3F4145]">{item.daily_sales_avg.toLocaleString()}개/일</strong><small className={item.sales_change_7d == null ? 'text-[#8A8D96]' : item.sales_change_7d >= 0 ? 'text-[#397255]' : 'text-[#A84C4C]'}>최근 7일 {item.sales_change_7d == null ? '비교 데이터 없음' : `${item.sales_change_7d >= 0 ? '▲' : '▼'} ${Math.abs(item.sales_change_7d)}%`}</small></div><div><span className="text-[10px] font-bold text-[#8A8D96]">예상 품절일</span><strong className="mt-1 block text-sm text-[#3F4145]">{item.expected_stockout_date ?? '예측 불가'}</strong><small className="text-[#8A8D96]">현재 판매 속도 기준</small></div><div><span className="text-[10px] font-bold text-[#8A8D96]">입고 예정</span><strong className="mt-1 block text-sm text-[#3F4145]">{item.incoming_qty.toLocaleString()} EA</strong><small className="text-[#8A8D96]">{item.incoming_date ?? '예정 없음'}</small></div><div><span className="text-[10px] font-bold text-[#8A8D96]">타 HUB 재고</span><strong className="mt-1 block text-sm text-[#3F4145]">{item.other_hub_stock.toLocaleString()} EA</strong><small className="text-[#8A8D96]">최다 {item.other_hub_name ?? '없음'}</small></div><label><span className="mb-1 block text-[10px] font-bold text-[#8A8D96]">담당자</span><select value={workflow.assignee} onChange={(event) => updateProductWorkflow(workflowKey, 'assignee', event.target.value)} className="w-full rounded-xl bg-[#EEF0F3] px-3 py-2 font-bold text-[#4F5258]"><option>미지정</option><option>재고 담당자</option><option>발주 담당자</option><option>HUB 운영 담당자</option></select></label><label><span className="mb-1 block text-[10px] font-bold text-[#8A8D96]">처리 상태</span><select value={workflow.status} onChange={(event) => updateProductWorkflow(workflowKey, 'status', event.target.value)} className="w-full rounded-xl bg-[#EEF0F3] px-3 py-2 font-bold text-[#4F5258]"><option>미처리</option><option>확인 중</option><option>발주 요청</option><option>이동 요청</option><option>처리 완료</option></select></label></div></td></tr>}</Fragment>;
+            })}</tbody></table></div> : <div className="rounded-2xl bg-white/35 py-10 text-center text-xs font-semibold text-[#8A8D96]">선택한 카테고리의 상품 재고가 없습니다.</div>;
+          })()}
+        </section>
+      )}
+
       {/* 소진 속도 + WOS 통합 재고 상태 */}
-      <div id="transferSection" className="bg-white/50 backdrop-blur-xl border border-white/70 p-6 rounded-[28px] shadow-sm">
+      <div id="transferSection" className="radius-frame-28-p24 bg-white/50 backdrop-blur-xl border border-white/70 p-6 rounded-[28px] shadow-sm">
         <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h3 className="text-base font-extrabold text-[#3F4145]">HUB별 소진 속도 및 재고 상태</h3>

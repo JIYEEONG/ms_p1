@@ -49,7 +49,7 @@ export default function Header({ onViewChange, allowedViews }: { onViewChange: (
   return (
     <header className="header flex justify-between items-center mb-6 gap-4">
       <div ref={wrapperRef} className="relative w-full max-w-[420px]">
-        <div className="search-bar flex items-center gap-2.5 px-4 py-2.5 rounded-[20px] bg-white/70 backdrop-blur-md border border-white/90 shadow-[0_10px_20px_-5px_rgba(160,175,200,0.2),inset_0_1px_2px_0_rgba(255,255,255,0.8)] focus-within:bg-white">
+        <div className="material-glass-control search-bar flex items-center gap-2.5 px-4 py-2.5 rounded-[20px] bg-white/70 backdrop-blur-md border border-white/90 shadow-[0_10px_20px_-5px_rgba(160,175,200,0.2),inset_0_1px_2px_0_rgba(255,255,255,0.8)] focus-within:bg-white">
           <span className="text-sm text-[#8A8D96]">⌕</span>
           <input type="search" value={query} onFocus={() => setOpen(true)} onChange={(e) => { setQuery(e.target.value); setOpen(true); }} onKeyDown={(e) => { if (e.key === 'Enter' && results[0]) selectItem(results[0]); }} placeholder="통합 검색 (상품, SKU, HUB, 카테고리)..." className="bg-transparent border-none outline-none text-xs w-full text-[#3F4145] placeholder-[#8A8D96] font-medium" />
           {query && <button type="button" onClick={() => setQuery('')} className="text-xs font-bold text-[#8A8D96]">×</button>}

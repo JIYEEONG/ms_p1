@@ -10,12 +10,12 @@ export interface SalesTrendPoint {
   label: string;
   period_start: string;
   period_days: number;
-  current_net_sales: number;
-  current_gross_sales: number;
-  previous_net_sales: number;
-  previous_gross_sales: number;
-  two_year_net_sales: number;
-  two_year_gross_sales: number;
+  current_net_sales: number | null;
+  current_gross_sales: number | null;
+  previous_net_sales: number | null;
+  previous_gross_sales: number | null;
+  two_year_net_sales: number | null;
+  two_year_gross_sales: number | null;
 }
 
 export interface SalesTrendData {
@@ -31,9 +31,9 @@ interface TooltipPayloadItem {
 }
 
 const series = [
-  { netKey: 'current_net_sales', grossKey: 'current_gross_sales', labelKey: 'current_label', opacity: 1, width: 2, dash: '' },
-  { netKey: 'previous_net_sales', grossKey: 'previous_gross_sales', labelKey: 'previous_label', opacity: 0.45, width: 1.4, dash: '8 5' },
-  { netKey: 'two_year_net_sales', grossKey: 'two_year_gross_sales', labelKey: 'two_year_label', opacity: 0.45, width: 1, dash: '2 5' },
+  { netKey: 'current_net_sales', grossKey: 'current_gross_sales', labelKey: 'current_label', opacity: 1, width: 2, dash: '', color: '#FF4500' },
+  { netKey: 'previous_net_sales', grossKey: 'previous_gross_sales', labelKey: 'previous_label', opacity: 0.82, width: 1.4, dash: '8 5', color: '#AFC8E5' },
+  { netKey: 'two_year_net_sales', grossKey: 'two_year_gross_sales', labelKey: 'two_year_label', opacity: 0.72, width: 1, dash: '2 5', color: '#C7CFD7' },
 ] as const;
 
 type SeriesKey = (typeof series)[number]['netKey'];
@@ -43,6 +43,18 @@ function formatMoney(value: number, currency: DisplayCurrency, exchangeRate: num
     return `$${(value / exchangeRate).toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
   }
   return `${Math.round(value).toLocaleString()}원`;
+}
+
+function formatCompactMoney(value: number, currency: DisplayCurrency, exchangeRate: number) {
+  const converted = currency === 'USD' ? value / exchangeRate : value;
+  if (currency === 'USD') {
+    if (Math.abs(converted) >= 1000000) return `$${(converted / 1000000).toFixed(2)}M`;
+    if (Math.abs(converted) >= 1000) return `$${(converted / 1000).toFixed(1)}K`;
+    return formatMoney(value, currency, exchangeRate);
+  }
+  if (Math.abs(converted) >= 100000000) return `${(converted / 100000000).toFixed(2)}억원`;
+  if (Math.abs(converted) >= 10000) return `${(converted / 10000).toFixed(1)}만원`;
+  return formatMoney(value, currency, exchangeRate);
 }
 
 function formatAxisValue(value: number, currency: DisplayCurrency, exchangeRate: number) {
@@ -74,26 +86,42 @@ function SalesTooltip({
 
   const totalDays = chartData.points.reduce((sum, item) => sum + item.period_days, 0);
   const pointGoal = totalDays > 0 ? goalAmount * (point.period_days / totalDays) : 0;
+  const goalRate = pointGoal > 0 && point.current_net_sales != null ? (point.current_net_sales / pointGoal) * 100 : null;
+  const compareRate = (past: number | null) => past != null && past > 0 && point.current_net_sales != null
+    ? ((point.current_net_sales - past) / past) * 100 : null;
+  const previousRate = compareRate(point.previous_net_sales);
+  const twoYearRate = compareRate(point.two_year_net_sales);
 
   return (
-    <div className="min-w-56 rounded-[16px] border border-white/90 bg-white/95 p-4 shadow-[0_12px_28px_-10px_rgba(63,65,69,0.25)] backdrop-blur-md">
+    <div className="w-max min-w-64 max-w-[calc(100vw-2rem)] whitespace-normal rounded-[16px] border border-white/90 bg-white/95 p-4 shadow-[0_12px_28px_-10px_rgba(63,65,69,0.25)] backdrop-blur-md">
       <p className="mb-3 text-xs font-extrabold text-[#3F4145]">{point.label}</p>
       <div className="space-y-3">
-        {series.filter((item) => visibleSeries.includes(item.netKey)).map((item) => {
-          const netSales = Number(point[item.netKey] ?? 0);
-          const grossSales = Number(point[item.grossKey] ?? 0);
+        {series.filter((item) => visibleSeries.includes(item.netKey)).map((item, index) => {
+          const netSales = point[item.netKey];
+          const grossSales = point[item.grossKey];
           return (
-            <div key={item.netKey} style={{ opacity: item.opacity }}>
-              <p className="text-[10px] font-bold text-[#8A8D96]">{chartData[item.labelKey]}</p>
-              <p className="text-sm font-black text-[#3F4145]">순매출 {formatMoney(netSales, currency, exchangeRate)}</p>
-              <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] font-semibold text-[#8A8D96]">
-                <span>총매출 {formatMoney(grossSales, currency, exchangeRate)}</span>
-                <span>목표매출 {formatMoney(pointGoal, currency, exchangeRate)}</span>
+            <div
+              key={item.netKey}
+              className={index > 0 ? 'border-t border-[#D9DCE2] pt-3' : undefined}
+            >
+              <div className="flex items-baseline justify-between gap-5 text-[10px] font-semibold">
+                <p className="text-[#8A8D96]">{chartData[item.labelKey]}</p>
+                {item.netKey === 'current_net_sales' && (
+                  <div className="flex flex-col items-end gap-0.5">
+                    {previousRate != null && <span className={`font-extrabold ${previousRate >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>전년 {previousRate >= 0 ? '▲' : '▼'} {Math.abs(previousRate).toFixed(1)}%</span>}
+                    {twoYearRate != null && <span className={`font-extrabold ${twoYearRate >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>재작년 {twoYearRate >= 0 ? '▲' : '▼'} {Math.abs(twoYearRate).toFixed(1)}%</span>}
+                  </div>
+                )}
               </div>
+              <p className="mt-1 text-base font-black text-[#3F4145]">{netSales == null ? '—' : formatCompactMoney(netSales, currency, exchangeRate)}</p>
+              {netSales != null && <p className="text-[10px] font-semibold text-[#8A8D96]">{formatMoney(netSales, currency, exchangeRate)}</p>}
+              <p className="mt-1 text-[10px] font-semibold text-[#8A8D96]">총매출 {grossSales == null ? '—' : `${formatCompactMoney(grossSales, currency, exchangeRate)} · ${formatMoney(grossSales, currency, exchangeRate)}`}</p>
             </div>
           );
         })}
       </div>
+      <div className="mt-3 flex items-center justify-between border-t border-[#D9DCE2] pt-3 text-[10px] font-semibold text-[#4F7761]"><span>목표 대비</span><span className="font-extrabold">{goalRate == null ? '—' : `${goalRate.toFixed(1)}%`}</span></div>
+      <p className="mt-1 text-right text-[10px] font-semibold text-[#8A8D96]">목표 {formatCompactMoney(pointGoal, currency, exchangeRate)} · {formatMoney(pointGoal, currency, exchangeRate)}</p>
     </div>
   );
 }
@@ -105,6 +133,7 @@ export default function SalesTrendChart({
   goalAmount,
   currency,
   exchangeRate,
+  loading = false,
 }: {
   data: SalesTrendData | null;
   unit: SalesTrendUnit;
@@ -112,6 +141,7 @@ export default function SalesTrendChart({
   goalAmount: number;
   currency: DisplayCurrency;
   exchangeRate: number;
+  loading?: boolean;
 }) {
   const hasData = Boolean(data?.points.length);
   const [visibleSeries, setVisibleSeries] = React.useState<SeriesKey[]>(series.map((item) => item.netKey));
@@ -124,7 +154,7 @@ export default function SalesTrendChart({
   };
 
   return (
-    <div className="flex min-h-[430px] h-full flex-col justify-between rounded-[32px] border border-white/70 bg-white/50 p-6 shadow-sm backdrop-blur-xl">
+    <div className="radius-frame-32-p24 relative z-20 flex min-h-[430px] h-full flex-col justify-between overflow-visible rounded-[32px] border border-white/70 bg-white/50 p-6 shadow-sm backdrop-blur-xl">
       <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
         <div>
           <h3 className="text-base font-extrabold text-[#3F4145]">순매출 추이</h3>
@@ -151,8 +181,9 @@ export default function SalesTrendChart({
                       style={{ opacity: item.opacity }}
                     >
                       <span>{data[item.labelKey]}</span>
-                      <span className="grid h-3.5 w-3.5 place-items-center rounded-full border border-[#8A8D96]" aria-hidden="true">
-                        {selected && <span className="h-1.5 w-1.5 rounded-full bg-[#3F4145]" />}
+                      <span className="relative h-3.5 w-7" aria-hidden="true"><span className="absolute left-0 right-0 top-1/2 border-t-2" style={{ borderColor: item.color, opacity: selected ? item.opacity : 0.2, borderTopStyle: item.dash ? 'dashed' : 'solid' }} /></span>
+                      <span className="grid h-3.5 w-3.5 place-items-center rounded-full border border-[#8A8D96] bg-white/50" aria-hidden="true">
+                        {selected && <span className="h-1.5 w-1.5 rounded-full bg-[#65676E]" />}
                       </span>
                     </button>
                   );
@@ -185,8 +216,10 @@ export default function SalesTrendChart({
         ))}
       </div>
 
-      <div className="h-[290px] w-full">
-        {hasData && data ? (
+      <div className="relative overflow-visible h-[290px] w-full">
+        {loading ? (
+          <div className="flex h-full items-end gap-3 px-6 pb-6" aria-label="매출 추이 집계 중">{[35, 58, 42, 75, 48, 66, 40, 82, 62, 72].map((height, index) => <div key={index} className="flex-1 animate-pulse rounded-t-lg bg-black/5" style={{ height: `${height}%` }} />)}</div>
+        ) : hasData && data ? (
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={data.points} margin={{ top: 12, right: 14, left: 8, bottom: 0 }}>
               <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: '#8A8D96', fontSize: 11 }} />
@@ -199,6 +232,7 @@ export default function SalesTrendChart({
               />
               <Tooltip
                 cursor={{ stroke: '#8A8D96', strokeOpacity: 0.2 }}
+                allowEscapeViewBox={{ x: false, y: true }}
                 content={<SalesTooltip chartData={data} goalAmount={goalAmount} currency={currency} exchangeRate={exchangeRate} visibleSeries={visibleSeries} />}
               />
               {series.filter((item) => visibleSeries.includes(item.netKey)).map((item) => (
@@ -206,12 +240,12 @@ export default function SalesTrendChart({
                   key={item.netKey}
                   type="monotone"
                   dataKey={item.netKey}
-                  stroke="#3F4145"
+                  stroke={item.color}
                   strokeOpacity={item.opacity}
                   strokeWidth={item.width}
                   strokeDasharray={item.dash || undefined}
                   connectNulls
-                  dot={{ r: 3.5, fill: '#3F4145', fillOpacity: item.opacity, stroke: '#FFFFFF', strokeWidth: 1.5 }}
+                  dot={{ r: 3.5, fill: item.color, fillOpacity: item.opacity, stroke: '#FFFFFF', strokeWidth: 1.5 }}
                   activeDot={{ r: 5 }}
                 />
               ))}

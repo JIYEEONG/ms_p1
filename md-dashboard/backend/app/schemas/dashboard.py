@@ -2,8 +2,9 @@
 
 # 26.08.05 로직 추가
 
-from pydantic import BaseModel
-from typing import List, Optional
+from pydantic import BaseModel, Field
+from typing import Dict, List, Optional
+from datetime import date
 
 # --- 필터 및 공통 응답 ---
 class FilterRequest(BaseModel):
@@ -17,12 +18,12 @@ class SalesTrendPoint(BaseModel):
     label: str
     period_start: str
     period_days: int
-    current_net_sales: float
-    current_gross_sales: float
-    previous_net_sales: float
-    previous_gross_sales: float
-    two_year_net_sales: float
-    two_year_gross_sales: float
+    current_net_sales: Optional[float]
+    current_gross_sales: Optional[float]
+    previous_net_sales: Optional[float]
+    previous_gross_sales: Optional[float]
+    two_year_net_sales: Optional[float]
+    two_year_gross_sales: Optional[float]
 
 
 class SalesTrendResponse(BaseModel):
@@ -152,6 +153,13 @@ class CategorySalesResponse(BaseModel):
     name: str
     value: float
     percentage: float
+    units_sold: int
+    total_cost: float
+    net_profit: float
+    profit_margin: float
+    cost_per_unit: float
+    profit_per_unit: float
+    cost_breakdown: Dict[str, float]
 
 # --- HUB별 재고 탭 ---
 class HubCardData(BaseModel):
@@ -167,6 +175,29 @@ class HubCardData(BaseModel):
 
 class HubInventoryResponse(BaseModel):
     hubs: List[HubCardData]
+
+class HubProductInventoryItem(BaseModel):
+    product_id: str
+    product_name: str
+    sku_ids: List[str] = Field(default_factory=list)
+    category_large: Optional[str] = None
+    category_middle: Optional[str] = None
+    category_small: Optional[str] = None
+    available: int
+    sales_28d: int
+    wos: float
+    safety_stock: int
+    stock_gap: int
+    daily_sales_avg: float
+    expected_stockout_date: Optional[date] = None
+    incoming_qty: int
+    incoming_date: Optional[date] = None
+    other_hub_stock: int
+    other_hub_name: Optional[str] = None
+    sales_change_7d: Optional[float] = None
+
+class HubProductInventoryResponse(BaseModel):
+    products: List[HubProductInventoryItem]
 
 # --- HUB 재고 균형 매트릭스 (상품 x HUB 가용재고/WOS) ---
 class ProductHubCell(BaseModel):

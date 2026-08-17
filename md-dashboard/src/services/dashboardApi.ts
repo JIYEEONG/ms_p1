@@ -160,6 +160,35 @@ export async function getHubInventory(): Promise<HubInventoryData> {
   return fetchJson(`${API_BASE_URL}/api/v1/dashboard/hub-inventory`, "HUB별 재고 조회 실패");
 }
 
+export interface HubProductInventoryItem {
+  product_id: string;
+  product_name: string;
+  sku_ids: string[];
+  category_large?: string;
+  category_middle?: string;
+  category_small?: string;
+  available: number;
+  sales_28d: number;
+  wos: number;
+  safety_stock: number;
+  stock_gap: number;
+  daily_sales_avg: number;
+  expected_stockout_date?: string;
+  incoming_qty: number;
+  incoming_date?: string;
+  other_hub_stock: number;
+  other_hub_name?: string;
+  sales_change_7d?: number;
+}
+
+export interface HubProductInventoryData {
+  products: HubProductInventoryItem[];
+}
+
+export async function getHubProductInventory(hubId: string): Promise<HubProductInventoryData> {
+  return fetchJson(`${API_BASE_URL}/api/v1/dashboard/hub-products?hub_id=${encodeURIComponent(hubId)}`, "HUB 상품 재고 조회 실패");
+}
+
 // --- HUB 재고 균형 매트릭스 ---
 export interface ProductHubCell {
   hub_id: string;

@@ -4,16 +4,14 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import FilterBar, { DisplayCurrency, OverviewFilters } from '../dashboard/FilterBar';
-import { KpiCards, AchievementBanner, OverviewKpiData } from '../dashboard/KpiCard';
+import { KpiCards, OverviewKpiData } from '../dashboard/KpiCard';
 import type { GoalSettings, GoalUnit } from '../dashboard/GoalModal';
 import SalesTrendChart, { SalesTrendData, SalesTrendUnit } from '../charts/SalesTrendChart';
-import SalesEfficiency from '../dashboard/SalesEfficiency';
 import CategorySalesChart, { CategoryDataItem } from '../charts/CategorySalesChart';
-import InventoryStatus from '../dashboard/InventoryStatus';
 import { DashboardApiError, fetchJson } from '../../services/dashboardApi';
 import { DashboardView } from '@/types/dashboard';
 
-export default function OverviewTab({ onNavigate, allowedViews }: { onNavigate: (view: DashboardView) => void; allowedViews: DashboardView[] }) {
+export default function OverviewTab({ onNavigate, allowedViews, sidebarOpen }: { onNavigate: (view: DashboardView) => void; allowedViews: DashboardView[]; sidebarOpen: boolean }) {
   // 백엔드 데이터를 보관할 State
   const [salesTrendData, setSalesTrendData] = useState<SalesTrendData | null>(null);
   const [salesTrendUnit, setSalesTrendUnit] = useState<SalesTrendUnit>('month');
@@ -23,7 +21,10 @@ export default function OverviewTab({ onNavigate, allowedViews }: { onNavigate: 
   const [kpiLoading, setKpiLoading] = useState(false);
   const [kpiError, setKpiError] = useState('');
   const [trendError, setTrendError] = useState('');
+  const [trendLoading, setTrendLoading] = useState(false);
   const [categoryError, setCategoryError] = useState('');
+  const [categoryLoading, setCategoryLoading] = useState(false);
+  const [categoryLevel, setCategoryLevel] = useState<'large' | 'middle' | 'small'>('large');
   const [goalSettings, setGoalSettings] = useState<GoalSettings>({
     day: 3287671,
     week: 23076923,
@@ -36,19 +37,39 @@ export default function OverviewTab({ onNavigate, allowedViews }: { onNavigate: 
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || '/backend';
   const handleFilterChange = useCallback((nextFilters: OverviewFilters) => {
     setKpiLoading(true);
+    setTrendLoading(true);
+    setCategoryLoading(true);
     setKpiError('');
+    setTrendError('');
+    setCategoryError('');
     setFilters(nextFilters);
+  }, []);
+  const handleSalesTrendUnitChange = useCallback((unit: SalesTrendUnit) => {
+    setTrendLoading(true);
+    setTrendError('');
+    setSalesTrendUnit(unit);
+  }, []);
+  const handleCategoryLevelChange = useCallback((level: 'large' | 'middle' | 'small') => {
+    setCategoryLoading(true);
+    setCategoryError('');
+    setCategoryLevel(level);
   }, []);
   const handleGoalSettingsChange = useCallback((goals: GoalSettings, unit: GoalUnit) => {
     setGoalSettings(goals);
     setGoalUnit(unit);
   }, []);
+  const periodDays = useMemo(() => {
+    if (!filters) return 1;
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const effectiveEndDate = filters.endDate < today ? filters.endDate : today;
+    return Math.max(
+      1,
+      Math.round((Date.parse(effectiveEndDate) - Date.parse(filters.startDate)) / 86400000) + 1,
+    );
+  }, [filters]);
   const goalAmount = useMemo(() => {
     if (!filters) return goalSettings[goalUnit];
-    const periodDays = Math.max(
-      1,
-      Math.round((Date.parse(filters.endDate) - Date.parse(filters.startDate)) / 86400000) + 1,
-    );
     const factor = {
       day: periodDays,
       week: periodDays / 7,
@@ -56,17 +77,23 @@ export default function OverviewTab({ onNavigate, allowedViews }: { onNavigate: 
       year: periodDays / 365,
     }[goalUnit];
     return goalSettings[goalUnit] * factor;
-  }, [filters, goalSettings, goalUnit]);
+  }, [filters, goalSettings, goalUnit, periodDays]);
 
   // 카테고리별 매출 API 호출
   useEffect(() => {
-    setCategoryError('');
-    fetchJson<any[]>(`${apiBaseUrl}/api/v1/dashboard/category-sales`, '카테고리별 매출 조회 실패')
+    if (!filters) return;
+    const params = new URLSearchParams({ start_date: filters.startDate, end_date: filters.endDate, level: categoryLevel });
+    if (filters.categoryLarge !== '전체') params.set('category_large', filters.categoryLarge);
+    if (filters.categoryMiddle !== '전체') params.set('category_middle', filters.categoryMiddle);
+    if (filters.season !== '전체') params.set('season', filters.season);
+    if (filters.hub !== '전체') params.set('hub', filters.hub);
+    fetchJson<CategoryDataItem[]>(`${apiBaseUrl}/api/v1/dashboard/category-sales?${params}`, '카테고리별 매출 조회 실패')
       .then((data) => setCategorySalesData(data))
       .catch((err: DashboardApiError) => {
         setCategoryError(err.type === 'NETWORK_ERROR' ? '서버에 연결할 수 없습니다.' : err.message);
-      });
-  }, [apiBaseUrl]);
+      })
+      .finally(() => setCategoryLoading(false));
+  }, [apiBaseUrl, filters, categoryLevel]);
 
   // 목표 설정값을 백엔드에서 불러오기 (최초 1회)
   useEffect(() => {
@@ -143,28 +170,30 @@ export default function OverviewTab({ onNavigate, allowedViews }: { onNavigate: 
         if (requestError.name === 'AbortError') return;
         const err = requestError as DashboardApiError;
         setTrendError(err.type === 'NETWORK_ERROR' ? '서버에 연결할 수 없습니다.' : err.message);
-      });
+      })
+      .finally(() => { if (!controller.signal.aborted) setTrendLoading(false); });
 
     return () => controller.abort();
   }, [filters, salesTrendUnit, apiBaseUrl]);
 
   return (
     <div className="space-y-6 pb-12">
-      {/* 1. 페이지 최상단 목표 달성 현황 */}
-      <section>
-        <AchievementBanner data={kpiData} goalAmount={goalAmount} loading={kpiLoading} />
-      </section>
+      <div>
+        <h2 className="page-on-dark-title text-2xl font-extrabold tracking-tight">매출 현황</h2>
+        <p className="page-on-dark-copy mt-1 text-xs">매출과 순이익, 목표 달성 및 카테고리별 수익성을 확인합니다.</p>
+      </div>
 
-      {/* 2. 상단 조건 필터 */}
-      <section>
+      {/* 1. 페이지 최상단 조건 필터 */}
+      <section id="overview-filters" className="scroll-mt-4">
         <FilterBar
           onChange={handleFilterChange}
           currency={currency}
           onCurrencyChange={setCurrency}
+          sidebarOpen={sidebarOpen}
         />
       </section>
 
-      {/* 3. 목표와 달성 */}
+      {/* 2. 목표와 달성 */}
       <section>
         <KpiCards
           data={kpiData}
@@ -176,6 +205,7 @@ export default function OverviewTab({ onNavigate, allowedViews }: { onNavigate: 
           onGoalSettingsChange={handleGoalSettingsChange}
           currency={currency}
           exchangeRate={exchangeRate}
+          periodDays={periodDays}
         />
       </section>
 
@@ -185,26 +215,19 @@ export default function OverviewTab({ onNavigate, allowedViews }: { onNavigate: 
         <SalesTrendChart
           data={salesTrendData}
           unit={salesTrendUnit}
-          onUnitChange={setSalesTrendUnit}
+          onUnitChange={handleSalesTrendUnitChange}
           goalAmount={goalAmount}
           currency={currency}
           exchangeRate={exchangeRate}
+          loading={trendLoading}
         />
       </section>
 
-      {/* 5. 판매 효율 */}
+      {/* 5. 카테고리별 매출 */}
       <section>
-        <SalesEfficiency />
-      </section>
-
-      {/* 6. 카테고리별 매출 (좌 2칸) + 재고/위험 상태 (우 1칸) */}
-      <section className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
-        <div className="lg:col-span-2 h-full">
+        <div className="h-full">
           {categoryError && <p className="text-sm text-red-500 mb-2">{categoryError}</p>}
-          <CategorySalesChart data={categorySalesData} />
-        </div>
-        <div className="lg:col-span-1 h-full">
-          <InventoryStatus onNavigate={onNavigate} allowedViews={allowedViews} />
+          <CategorySalesChart data={categorySalesData} loading={categoryLoading} level={categoryLevel} onLevelChange={handleCategoryLevelChange} onNavigateToProduct={() => onNavigate('product')} />
         </div>
       </section>
 

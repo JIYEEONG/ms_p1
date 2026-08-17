@@ -81,7 +81,7 @@ export default function Sidebar({ currentView, onViewChange, isOpen, onToggle, a
     return (
       <button
         onClick={onToggle}
-        className="sticky top-6 self-start shrink-0 w-12 h-12 bg-white/80 backdrop-blur-md border border-white rounded-2xl shadow-[0_10px_20px_-5px_rgba(140,150,170,0.2)] hover:shadow-[0_14px_24px_-4px_rgba(140,150,170,0.3)] transition-all flex items-center justify-center text-[#3F4145] cursor-pointer hover:-translate-y-0.5"
+        className="material-glass-control sticky top-6 self-start shrink-0 w-12 h-12 bg-white/80 backdrop-blur-md border border-white rounded-2xl shadow-[0_10px_20px_-5px_rgba(140,150,170,0.2)] hover:shadow-[0_14px_24px_-4px_rgba(140,150,170,0.3)] transition-all flex items-center justify-center text-[#3F4145] cursor-pointer hover:-translate-y-0.5"
         title="사이드바 열기"
       >
         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -94,7 +94,7 @@ export default function Sidebar({ currentView, onViewChange, isOpen, onToggle, a
   // 열려있을 때: 몽환적인 3D 카드 효과가 적용된 사이드바
   return (
     <aside className="sticky top-6 h-[calc(100vh-48px)] w-72 shrink-0 self-start transition-all duration-300 ease-in-out">
-      <div className="h-full overflow-y-auto overscroll-contain bg-white/70 backdrop-blur-md border border-white/90 rounded-[32px] p-6 shadow-[0_20px_35px_-10px_rgba(160,175,200,0.25),inset_0_1px_2px_0_rgba(255,255,255,0.8)] flex flex-col justify-between gap-4 [scrollbar-width:thin]">
+      <div className="material-glass-panel h-full overflow-y-auto overscroll-contain bg-white/70 backdrop-blur-md border border-white/90 rounded-[32px] p-6 shadow-[0_20px_35px_-10px_rgba(160,175,200,0.25),inset_0_1px_2px_0_rgba(255,255,255,0.8)] flex flex-col justify-between gap-4 [scrollbar-width:thin]">
         <div>
           {/* 상단 로고 & X (닫기) 버튼 */}
           <div className="flex items-center justify-between mb-8 gap-2">
@@ -111,7 +111,7 @@ export default function Sidebar({ currentView, onViewChange, isOpen, onToggle, a
             {/* 열려있을 때 보여주는 X (닫기) 버튼 */}
             <button
               onClick={onToggle}
-              className="p-2 bg-white/80 border border-white rounded-xl shadow-[0_4px_10px_-2px_rgba(140,150,170,0.15)] hover:bg-white hover:shadow-[0_6px_14px_-2px_rgba(140,150,170,0.25)] transition-all text-[#3F4145] shrink-0 cursor-pointer hover:-translate-y-0.5"
+              className="material-glass-control p-2 bg-white/80 border border-white rounded-xl shadow-[0_4px_10px_-2px_rgba(140,150,170,0.15)] hover:bg-white hover:shadow-[0_6px_14px_-2px_rgba(140,150,170,0.25)] transition-all text-[#3F4145] shrink-0 cursor-pointer hover:-translate-y-0.5"
               title="사이드바 접기"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -125,9 +125,10 @@ export default function Sidebar({ currentView, onViewChange, isOpen, onToggle, a
             {canShow('overview') && (
               <button
                 onClick={() => onViewChange('overview')}
+                aria-current={currentView === 'overview' ? 'page' : undefined}
                 className={`w-full text-left px-4 py-3.5 rounded-2xl text-xs font-bold transition-all ${
                   currentView === 'overview'
-                    ? 'bg-white text-[#3F4145] shadow-[0_10px_20px_-5px_rgba(140,150,170,0.2)] border border-white'
+                    ? 'sidebar-nav-active text-[#273047] border'
                     : 'text-[#8A8D96] hover:bg-white/40 hover:text-[#3F4145]'
                 }`}
               >
@@ -137,9 +138,10 @@ export default function Sidebar({ currentView, onViewChange, isOpen, onToggle, a
             {canShow('hub') && (
               <button
                 onClick={() => onViewChange('hub')}
+                aria-current={currentView === 'hub' ? 'page' : undefined}
                 className={`w-full text-left px-4 py-3.5 rounded-2xl text-xs font-bold transition-all ${
                   currentView === 'hub'
-                    ? 'bg-white text-[#3F4145] shadow-[0_10px_20px_-5px_rgba(140,150,170,0.2)] border border-white'
+                    ? 'sidebar-nav-active text-[#273047] border'
                     : 'text-[#8A8D96] hover:bg-white/40 hover:text-[#3F4145]'
                 }`}
               >
@@ -149,9 +151,10 @@ export default function Sidebar({ currentView, onViewChange, isOpen, onToggle, a
             {canShow('product') && (
               <button
                 onClick={() => onViewChange('product')}
+                aria-current={currentView === 'product' ? 'page' : undefined}
                 className={`w-full text-left px-4 py-3.5 rounded-2xl text-xs font-bold transition-all ${
                   currentView === 'product'
-                    ? 'bg-white text-[#3F4145] shadow-[0_10px_20px_-5px_rgba(140,150,170,0.2)] border border-white'
+                    ? 'sidebar-nav-active text-[#273047] border'
                     : 'text-[#8A8D96] hover:bg-white/40 hover:text-[#3F4145]'
                 }`}
               >
@@ -161,9 +164,10 @@ export default function Sidebar({ currentView, onViewChange, isOpen, onToggle, a
             {canShow('forecast') && (
               <button
                 onClick={() => onViewChange('forecast')}
+                aria-current={currentView === 'forecast' ? 'page' : undefined}
                 className={`w-full text-left px-4 py-3.5 rounded-2xl text-xs font-bold transition-all ${
                   currentView === 'forecast'
-                    ? 'bg-white text-[#3F4145] shadow-[0_10px_20px_-5px_rgba(140,150,170,0.2)] border border-white'
+                    ? 'sidebar-nav-active text-[#273047] border'
                     : 'text-[#8A8D96] hover:bg-white/40 hover:text-[#3F4145]'
                 }`}
               >

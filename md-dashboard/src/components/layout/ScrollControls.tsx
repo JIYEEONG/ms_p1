@@ -7,10 +7,20 @@ export default function ScrollControls() {
   const [canGoDown, setCanGoDown] = useState(false);
 
   useEffect(() => {
-    const update = () => {
+    const getStops = () => {
+      const main = document.querySelector('main');
+      const page = main?.lastElementChild as HTMLElement | null;
+      if (!page || page.tagName === 'HEADER') return [0];
+      const positions = Array.from(page.children)
+        .filter((element): element is HTMLElement => element instanceof HTMLElement && element.offsetHeight > 24)
+        .map((element) => Math.max(0, element.getBoundingClientRect().top + window.scrollY - 24));
       const maxScroll = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
-      setCanGoUp(window.scrollY > 80);
-      setCanGoDown(window.scrollY < maxScroll - 80);
+      return [...new Set([0, ...positions, maxScroll])].sort((a, b) => a - b);
+    };
+    const update = () => {
+      const stops = getStops();
+      setCanGoUp(stops.some((position) => position < window.scrollY - 12));
+      setCanGoDown(stops.some((position) => position > window.scrollY + 12));
     };
     update();
     window.addEventListener('scroll', update, { passive: true });
@@ -25,30 +35,43 @@ export default function ScrollControls() {
   }, []);
 
   const moveTo = (top: number) => window.scrollTo({ top, behavior: 'smooth' });
+  const moveSection = (direction: 'up' | 'down') => {
+    const main = document.querySelector('main');
+    const page = main?.lastElementChild as HTMLElement | null;
+    if (!page || page.tagName === 'HEADER') return;
+    const maxScroll = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+    const stops = [...new Set([0, ...Array.from(page.children)
+      .filter((element): element is HTMLElement => element instanceof HTMLElement && element.offsetHeight > 24)
+      .map((element) => Math.max(0, element.getBoundingClientRect().top + window.scrollY - 24)), maxScroll])].sort((a, b) => a - b);
+    const target = direction === 'up'
+      ? [...stops].reverse().find((position) => position < window.scrollY - 12)
+      : stops.find((position) => position > window.scrollY + 12);
+    if (target != null) moveTo(target);
+  };
 
   return (
-    <nav aria-label="페이지 빠른 이동" className="fixed bottom-5 right-5 z-40 flex flex-col gap-2 sm:bottom-7 sm:right-7">
+    <nav aria-label="페이지 섹션 이동" className="fixed bottom-4 right-2 z-40 flex flex-col gap-1.5 sm:bottom-5 sm:right-3">
       <button
         type="button"
-        onClick={() => moveTo(0)}
+        onClick={() => moveSection('up')}
         disabled={!canGoUp}
-        aria-label="페이지 맨 위로 이동"
-        title="맨 위로"
-        className="group flex h-11 w-11 items-center justify-center rounded-2xl border border-white/90 bg-white/85 text-lg font-black text-[#3F4145] shadow-[0_10px_25px_-8px_rgba(50,55,65,0.35)] backdrop-blur-md transition hover:-translate-y-0.5 hover:bg-white disabled:pointer-events-none disabled:opacity-30"
+        aria-label="이전 섹션으로 이동"
+        title="이전 섹션"
+        className="material-glass-control group flex h-9 w-9 items-center justify-center rounded-xl border border-white/90 bg-white/85 text-base font-black text-[#3F4145] shadow-[0_8px_18px_-7px_rgba(50,55,65,0.35)] backdrop-blur-md transition hover:-translate-y-0.5 hover:bg-white disabled:pointer-events-none disabled:opacity-30"
       >
         <span aria-hidden="true">↑</span>
-        <span className="pointer-events-none absolute right-12 whitespace-nowrap rounded-lg bg-[#3F4145] px-2 py-1 text-[9px] font-bold text-white opacity-0 transition group-hover:opacity-100">맨 위로</span>
+        <span className="pointer-events-none absolute right-10 whitespace-nowrap rounded-lg bg-[#3F4145] px-2 py-1 text-[9px] font-bold text-white opacity-0 transition group-hover:opacity-100">이전 섹션</span>
       </button>
       <button
         type="button"
-        onClick={() => moveTo(document.documentElement.scrollHeight)}
+        onClick={() => moveSection('down')}
         disabled={!canGoDown}
-        aria-label="페이지 맨 아래로 이동"
-        title="맨 아래로"
-        className="group flex h-11 w-11 items-center justify-center rounded-2xl border border-white/90 bg-[#3F4145]/90 text-lg font-black text-white shadow-[0_10px_25px_-8px_rgba(50,55,65,0.45)] backdrop-blur-md transition hover:translate-y-0.5 hover:bg-[#292B2F] disabled:pointer-events-none disabled:opacity-30"
+        aria-label="다음 섹션으로 이동"
+        title="다음 섹션"
+        className="material-glass-control group flex h-9 w-9 items-center justify-center rounded-xl border border-white/90 bg-[#3F4145]/90 text-base font-black text-white shadow-[0_8px_18px_-7px_rgba(50,55,65,0.45)] backdrop-blur-md transition hover:translate-y-0.5 hover:bg-[#292B2F] disabled:pointer-events-none disabled:opacity-30"
       >
         <span aria-hidden="true">↓</span>
-        <span className="pointer-events-none absolute right-12 whitespace-nowrap rounded-lg bg-[#3F4145] px-2 py-1 text-[9px] font-bold text-white opacity-0 transition group-hover:opacity-100">맨 아래로</span>
+        <span className="pointer-events-none absolute right-10 whitespace-nowrap rounded-lg bg-[#3F4145] px-2 py-1 text-[9px] font-bold text-white opacity-0 transition group-hover:opacity-100">다음 섹션</span>
       </button>
     </nav>
   );

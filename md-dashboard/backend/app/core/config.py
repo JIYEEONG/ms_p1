@@ -78,10 +78,11 @@ class Settings(BaseSettings):
     @property
     def DATABASE_URL(self) -> str:
         driver = "ODBC Driver 17 for SQL Server"
-        server = "localhost" if self.USE_LOCAL else self.DB_SERVER
+        server = self.DB_SERVER
+        is_local_db = server.lower() in {"localhost", "127.0.0.1", "host.docker.internal"}
         encryption_options = (
             "Encrypt=yes;TrustServerCertificate=yes;"
-            if self.USE_LOCAL
+            if is_local_db
             else "Encrypt=yes;TrustServerCertificate=no;"
         )
 

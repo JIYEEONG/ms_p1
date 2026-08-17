@@ -2,7 +2,7 @@
 
 'use client';
 
-import React, { useEffect, useMemo, useState, type ReactNode } from 'react';
+import React, { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '/backend';
 
@@ -126,13 +126,18 @@ export default function FilterBar({
   onChange,
   currency = 'KRW',
   onCurrencyChange,
+  sidebarOpen = false,
   children,
 }: {
   onChange?: (filters: OverviewFilters) => void;
   currency?: DisplayCurrency;
   onCurrencyChange?: (currency: DisplayCurrency) => void;
+  sidebarOpen?: boolean;
   children?: ReactNode;
 }) {
+  const filterRef = useRef<HTMLDivElement>(null);
+  const [showStickyFilter, setShowStickyFilter] = useState(false);
+  const [stickyExpanded, setStickyExpanded] = useState(false);
   const [options, setOptions] = useState<FilterOptions | null>(null);
   const [error, setError] = useState('');
   const [startDate, setStartDate] = useState<DateParts | null>(null);
@@ -169,6 +174,30 @@ export default function FilterBar({
   const minDate = useMemo(() => options ? parseDate(options.min_date) : null, [options]);
   const maxDate = useMemo(() => options ? parseDate(options.max_date) : null, [options]);
   const loading = !options && !error;
+  const activeFilterCount = useMemo(() => {
+    let count = [season, hub, categoryLarge, categoryMiddle].filter((value) => value !== '전체').length;
+    if (startDate && endDate && options && (toDateValue(startDate) !== options.min_date || toDateValue(endDate) !== options.max_date)) count += 1;
+    return count;
+  }, [season, hub, categoryLarge, categoryMiddle, startDate, endDate, options]);
+
+  const resetFilters = () => {
+    if (options) {
+      setStartDate(parseDate(options.min_date));
+      setEndDate(parseDate(options.max_date));
+    }
+    setSeason('전체'); setHub('전체'); setCategoryLarge('전체'); setCategoryMiddle('전체'); setActivePreset(null);
+  };
+
+  useEffect(() => {
+    const element = filterRef.current;
+    if (!element) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      setShowStickyFilter(!entry.isIntersecting && entry.boundingClientRect.top < 0);
+      if (entry.isIntersecting) setStickyExpanded(false);
+    }, { threshold: 0.05 });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     if (!startDate || !endDate) return;
@@ -218,10 +247,21 @@ export default function FilterBar({
     setActivePreset(preset);
   };
 
+  const activePresetLabel = activePreset === 'today'
+    ? '오늘'
+    : activePreset === 'week'
+      ? '1주일'
+      : activePreset === 'month'
+        ? '한달'
+        : activePreset === 'year'
+          ? '1년'
+          : '직접 설정';
+
   return (
-    <div className="bg-white/70 backdrop-blur-md border border-white/90 rounded-[28px] p-6 shadow-[0_20px_35px_-10px_rgba(160,175,200,0.2),inset_0_1px_2px_0_rgba(255,255,255,0.8)]">
+    <>
+    <div ref={filterRef} className="material-glass-filter radius-frame-28-p24 bg-white/70 backdrop-blur-md border border-white/90 rounded-[28px] p-6 shadow-[0_20px_35px_-10px_rgba(160,175,200,0.2),inset_0_1px_2px_0_rgba(255,255,255,0.8)]">
       <div className="mb-3.5 flex items-center justify-between gap-4">
-        <h3 className="text-base font-extrabold text-[#3F4145] tracking-tight">분석 조건</h3>
+        <div className="flex items-center gap-2"><h3 className="text-base font-extrabold text-[#3F4145] tracking-tight">분석 조건</h3><span className="rounded-full bg-[#ECEEF1] px-2 py-1 text-[9px] font-extrabold text-[#656970]">{activeFilterCount}개 적용</span>{activeFilterCount > 0 && <button type="button" onClick={resetFilters} className="text-[10px] font-bold text-[#7A7D84] underline decoration-dotted underline-offset-2">전체 초기화</button>}</div>
         <div className="flex items-center gap-3">
           {error && <p className="text-[11px] font-semibold text-red-500">{error}</p>}
           <div className="flex items-start gap-3" role="radiogroup" aria-label="표시 통화">
@@ -329,5 +369,61 @@ export default function FilterBar({
         </section>
       </div>
     </div>
+    {showStickyFilter && (
+      <aside className={`fixed right-14 top-3 z-40 w-[min(900px,calc(100vw-5rem))] rounded-[18px] border border-white/90 bg-white/90 p-2.5 shadow-[0_12px_30px_-10px_rgba(63,65,69,0.3)] backdrop-blur-xl lg:right-14 lg:w-auto lg:max-w-[900px] ${sidebarOpen ? 'hidden lg:block lg:left-[21rem]' : 'block lg:left-6'}`} aria-label="빠른 분석 조건">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <span className="shrink-0 text-[10px] font-extrabold text-[#3F4145]">빠른 필터 · {activeFilterCount}개</span>
+          <div className="flex min-w-[16rem] flex-1 flex-wrap items-center gap-1.5">
+            {[
+              ['표시 통화', currency === 'KRW' ? '원화' : '달러'],
+              ['빠른 기간', activePresetLabel],
+              ['시작일', startDate ? toDateValue(startDate) : '미설정'],
+              ['종료일', endDate ? toDateValue(endDate) : '미설정'],
+              ['시즌', season],
+              ['허브', hub],
+              ['대카테고리', categoryLarge],
+              ['중카테고리', categoryMiddle],
+            ].map(([label, value]) => <span key={label} className="shrink-0 whitespace-nowrap rounded-full bg-[#ECEEF1] px-2 py-1 text-[9px] font-bold text-[#5E626A]"><b className="mr-1 text-[#3F4145]">{label}</b>{value}</span>)}
+          </div>
+          {activeFilterCount > 0 && <button type="button" onClick={resetFilters} className="shrink-0 px-1 text-[9px] font-bold text-[#777B84]">초기화</button>}
+          <button type="button" onClick={() => setStickyExpanded((value) => !value)} className="shrink-0 rounded-xl bg-[#4F5258] px-3 py-1.5 text-[10px] font-extrabold text-white" aria-expanded={stickyExpanded}>{stickyExpanded ? '닫기' : '수정'}</button>
+        </div>
+        {stickyExpanded && (
+          <div className="mt-2 border-t border-black/5 pt-3">
+            <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+              <h3 className="text-sm font-extrabold text-[#3F4145]">분석 조건</h3>
+              <div className="flex items-start gap-3" role="radiogroup" aria-label="빠른 표시 통화">
+                <span className="pt-0.5 text-[10px] font-extrabold text-[#65676E]">표시 통화</span>
+                <div className="flex flex-col gap-1">
+                  {([['KRW', '원화'], ['USD', '달러']] as const).map(([value, label]) => {
+                    const selected = currency === value;
+                    return <button key={value} type="button" role="radio" aria-checked={selected} onClick={() => onCurrencyChange?.(value)} className={`flex items-center justify-end gap-2 text-[10px] font-bold ${selected ? 'text-[#3F4145]' : 'text-[#8A8D96]'}`}><span>{label}</span><span className="grid h-3.5 w-3.5 place-items-center rounded-full border border-[#8A8D96]">{selected && <span className="h-1.5 w-1.5 rounded-full bg-[#3F4145]" />}</span></button>;
+                  })}
+                </div>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 items-stretch divide-y divide-black/10 lg:grid-cols-[2fr_1fr_1fr] lg:divide-x lg:divide-y-0">
+              <section className="py-3 lg:pr-5" aria-label="빠른 기간 조건">
+                <h4 className="mb-3 text-xs font-extrabold text-[#3F4145]">기간</h4>
+                <div className="flex flex-wrap gap-2" aria-label="빠른 기간 선택">
+                  {([['today', '오늘'], ['week', '1주일'], ['month', '한달'], ['year', '1년']] as const).map(([preset, label]) => <button key={preset} type="button" onClick={() => applyPeriodPreset(preset)} disabled={!options} aria-pressed={activePreset === preset} className={`min-w-14 rounded-xl px-3 py-2 text-[10px] font-bold ${activePreset === preset ? 'bg-[#3F4145] text-white' : 'bg-white/70 text-[#65676E]'}`}>{label}</button>)}
+                </div>
+                <div className="mt-3"><SelectFilter label="시즌" values={options?.seasons ?? []} value={season} disabled={!options} onChange={setSeason} /></div>
+                {startDate && endDate && minDate && maxDate && <div className="mt-3"><label className="mb-1.5 ml-1 block text-[10px] font-bold text-[#8A8D96]">조회 기간</label><div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-end gap-2"><CalendarDateInput label="시작일" value={startDate} minDate={minDate} maxDate={maxDate} onChange={changeStartDate} /><span className="pb-3 text-xs font-bold text-[#8A8D96]">–</span><CalendarDateInput label="종료일" value={endDate} minDate={minDate} maxDate={maxDate} onChange={changeEndDate} /></div></div>}
+              </section>
+              <section className="py-3 lg:px-5" aria-label="빠른 허브 조건">
+                <h4 className="mb-3 text-xs font-extrabold text-[#3F4145]">허브</h4>
+                <SelectFilter label="허브" values={options?.hubs ?? []} value={hub} disabled={!options} onChange={setHub} />
+              </section>
+              <section className="py-3 lg:pl-5" aria-label="빠른 상품 조건">
+                <h4 className="mb-3 text-xs font-extrabold text-[#3F4145]">상품</h4>
+                <div className="space-y-3"><SelectFilter label="대카테고리" values={options?.category_large ?? []} value={categoryLarge} disabled={!options} onChange={setCategoryLarge} /><SelectFilter label="중카테고리" values={options?.category_middle ?? []} value={categoryMiddle} disabled={!options} onChange={setCategoryMiddle} /></div>
+              </section>
+            </div>
+          </div>
+        )}
+      </aside>
+    )}
+    </>
   );
 }

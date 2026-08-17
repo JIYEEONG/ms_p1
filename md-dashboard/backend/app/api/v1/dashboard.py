@@ -12,7 +12,7 @@ import calendar
 import math
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import Date, func, literal_column
+from sqlalchemy import Date, case, func, literal_column
 from typing import List, Optional
 from app.models.goal_settings import GoalSettings
 
@@ -42,6 +42,8 @@ from app.schemas.dashboard import (
     CategorySalesResponse,
     HubCardData, #HUBS 탭에 사용
     HubInventoryResponse, #HUBS 탭에 사용
+    HubProductInventoryItem,
+    HubProductInventoryResponse,
     ProductHubCell, #HUBS 탭에 사용
     ProductHubRow, #HUBS 탭에 사용
     HubMatrixResponse, #HUBS 탭에 사용
@@ -185,7 +187,7 @@ def get_sales_trend(
         values = []
         item = bucket_start_for(period_start)
         while item <= period_end:
-            values.append(data.get(item, (0.0, 0.0)))
+            values.append(data.get(item, (None, None)))
             item = next_bucket(item)
         return values
 
@@ -203,9 +205,9 @@ def get_sales_trend(
     while cursor <= end_date:
         bucket_end = min(next_bucket(cursor) - timedelta(days=1), end_date)
         visible_start = max(cursor, start_date)
-        current_values = current[index] if index < len(current) else (0.0, 0.0)
-        previous_values = previous[index] if index < len(previous) else (0.0, 0.0)
-        two_year_values = two_year[index] if index < len(two_year) else (0.0, 0.0)
+        current_values = current[index] if index < len(current) else (None, None)
+        previous_values = previous[index] if index < len(previous) else (None, None)
+        two_year_values = two_year[index] if index < len(two_year) else (None, None)
 
         if unit == "week":
             label = cursor.strftime("%m.%d")
@@ -653,20 +655,52 @@ def get_overview_kpis(
 
 @router.get("/category-sales", response_model=List[CategorySalesResponse])
 def get_category_sales(
+    start_date: date = Query(...),
+    end_date: date = Query(...),
+    level: str = Query("large", pattern="^(large|middle|small)$"),
+    category_large: Optional[str] = Query(None),
+    category_middle: Optional[str] = Query(None),
+    season: Optional[str] = Query(None),
+    hub: Optional[str] = Query(None),
     db: Session = Depends(get_db)
 ):
     """
     Azure DB dbo.ORDERS × dbo.PRODUCT_SKU 연동: 카테고리(대분류)별 순매출 조회
     """
+    category_column = {
+        "large": ProductSku.category_large,
+        "middle": ProductSku.category_middle,
+        "small": ProductSku.product_type,
+    }[level]
     query = (
         db.query(
-            ProductSku.category_large.label("category"),
-            func.sum(Order.total_sales).label("sales")
+            category_column.label("category"),
+            func.sum(Order.total_sales).label("sales"),
+            func.sum(Order.order_qty).label("units_sold"),
         )
         .join(ProductSku, Order.sku_id == ProductSku.sku_id)
-        .group_by(ProductSku.category_large)
+        .filter(Order.order_datetime >= start_date)
+        .filter(Order.order_datetime < end_date + timedelta(days=1))
+        .filter(Order.order_status == "정상")
+        .group_by(category_column)
         .order_by(func.sum(Order.total_sales).desc())
     )
+
+    if category_large:
+        query = query.filter(ProductSku.category_large == category_large)
+    if category_middle:
+        query = query.filter(ProductSku.category_middle == category_middle)
+    season_months = {
+        "봄(2월1일-4월30일)": [2, 3, 4], "여름(5월1일-8월31일)": [5, 6, 7, 8],
+        "가을(9월1일-10월31일)": [9, 10], "겨울(11월1일-1월31일)": [11, 12, 1],
+    }
+    if season in season_months:
+        query = query.filter(func.month(Order.order_datetime).in_(season_months[season]))
+    if hub:
+        hub_ids = [row[0] for row in db.query(InventoryRaw.hub_id).filter(InventoryRaw.hub_name == hub).distinct().all()]
+        query = query.filter(Order.hub_id.in_(hub_ids))
+
+    query = query.limit(5)
 
     results = query.all()
 
@@ -675,14 +709,31 @@ def get_category_sales(
 
     max_sales = max(float(r.sales or 0) for r in results)
 
-    return [
-        CategorySalesResponse(
-            name=r.category,
-            value=float(r.sales or 0),
-            percentage=round((float(r.sales or 0) / max_sales) * 100, 1) if max_sales > 0 else 0,
-        )
-        for r in results
-    ]
+    cost_rates = {
+        "원가": 0.42, "인건비": 0.11, "물류비": 0.05,
+        "마케팅비": 0.07, "결제수수료": 0.03, "관리비": 0.06,
+        "임차·공과금": 0.03, "반품·할인충당": 0.02, "세금·기타": 0.04,
+    }
+    response = []
+    for r in results:
+        sales = float(r.sales or 0)
+        units_sold = int(r.units_sold or 0)
+        # 카테고리별 가상 비용률을 78~88% 범위로 달리해 수익성 비교가 가능하도록 한다.
+        target_cost_rate = 0.78 + (sum(ord(ch) for ch in (r.category or "")) % 11) / 100
+        scale = target_cost_rate / sum(cost_rates.values())
+        breakdown = {name: round(sales * rate * scale, 2) for name, rate in cost_rates.items()}
+        total_cost = round(sum(breakdown.values()), 2)
+        net_profit = round(sales - total_cost, 2)
+        response.append(CategorySalesResponse(
+            name=r.category or "미분류", value=sales,
+            percentage=round((sales / max_sales) * 100, 1) if max_sales > 0 else 0,
+            units_sold=units_sold, total_cost=total_cost, net_profit=net_profit,
+            profit_margin=round((net_profit / sales) * 100, 1) if sales > 0 else 0,
+            cost_per_unit=round(total_cost / units_sold, 2) if units_sold > 0 else 0,
+            profit_per_unit=round(net_profit / units_sold, 2) if units_sold > 0 else 0,
+            cost_breakdown=breakdown,
+        ))
+    return response
 
 @router.get("/hub-inventory", response_model=HubInventoryResponse)
 def get_hub_inventory(db: Session = Depends(get_db)):
@@ -753,6 +804,141 @@ def get_hub_inventory(db: Session = Depends(get_db)):
     return HubInventoryResponse(hubs=result)
 
 # 26.08.07 HUB 재고 균형 매트릭스: 고정 4개 상품 x HUB별 가용재고/WOS API (dbo.INVENTORY 원본 연동)
+@router.get("/hub-products", response_model=HubProductInventoryResponse)
+def get_hub_products(
+    hub_id: str = Query(...),
+    db: Session = Depends(get_db),
+):
+    """선택 HUB가 보유한 상품별 가용재고와 최근 28일 판매량을 반환한다."""
+    inventory_rows = (
+        db.query(
+            ProductSku.product_id,
+            ProductSku.product_name,
+            ProductSku.category_large,
+            ProductSku.category_middle,
+            ProductSku.product_type.label("category_small"),
+            func.sum(InventoryRaw.available_qty).label("available"),
+        )
+        .select_from(InventoryRaw)
+        .join(ProductSku, ProductSku.sku_id == InventoryRaw.sku_id)
+        .filter(InventoryRaw.snapshot_date == REFERENCE_DATE)
+        .filter(InventoryRaw.hub_id == hub_id)
+        .group_by(ProductSku.product_id, ProductSku.product_name, ProductSku.category_large, ProductSku.category_middle, ProductSku.product_type)
+        .having(func.sum(InventoryRaw.available_qty) > 0)
+        .all()
+    )
+    product_ids = [row.product_id for row in inventory_rows]
+    sku_rows = (
+        db.query(ProductSku.product_id, ProductSku.sku_id)
+        .select_from(InventoryRaw)
+        .join(ProductSku, ProductSku.sku_id == InventoryRaw.sku_id)
+        .filter(InventoryRaw.snapshot_date == REFERENCE_DATE)
+        .filter(InventoryRaw.hub_id == hub_id)
+        .filter(InventoryRaw.available_qty > 0)
+        .distinct()
+        .all()
+    )
+    sku_map = {}
+    for product_id, sku_id in sku_rows:
+        sku_map.setdefault(product_id, []).append(sku_id)
+    period_start = REFERENCE_DATE - timedelta(days=28)
+    sales_rows = (
+        db.query(ProductSku.product_id, func.sum(Order.order_qty).label("sales"))
+        .select_from(Order)
+        .join(ProductSku, ProductSku.sku_id == Order.sku_id)
+        .filter(Order.hub_id == hub_id)
+        .filter(Order.order_datetime >= period_start)
+        .filter(Order.order_datetime < REFERENCE_DATE + timedelta(days=1))
+        .group_by(ProductSku.product_id)
+        .all()
+    )
+    sales_map = {product_id: int(sales or 0) for product_id, sales in sales_rows}
+    recent_7d_start = REFERENCE_DATE - timedelta(days=6)
+    previous_7d_start = recent_7d_start - timedelta(days=7)
+    sales_14d_rows = (
+        db.query(
+            ProductSku.product_id,
+            func.sum(case((Order.order_datetime >= recent_7d_start, Order.order_qty), else_=0)).label("recent_sales"),
+            func.sum(case((Order.order_datetime < recent_7d_start, Order.order_qty), else_=0)).label("previous_sales"),
+        )
+        .select_from(Order)
+        .join(ProductSku, ProductSku.sku_id == Order.sku_id)
+        .filter(Order.hub_id == hub_id)
+        .filter(Order.order_datetime >= previous_7d_start)
+        .filter(Order.order_datetime < REFERENCE_DATE + timedelta(days=1))
+        .group_by(ProductSku.product_id)
+        .all()
+    )
+    change_map = {}
+    for product_id, recent_sales, previous_sales in sales_14d_rows:
+        recent_value, previous_value = int(recent_sales or 0), int(previous_sales or 0)
+        change_map[product_id] = round((recent_value - previous_value) / previous_value * 100, 1) if previous_value > 0 else None
+
+    incoming_rows = (
+        db.query(
+            ProductSku.product_id,
+            func.sum(PurchaseOrder.ordered_qty - func.coalesce(PurchaseOrder.received_qty, 0)).label("incoming_qty"),
+            func.min(PurchaseOrder.expected_arrival_date).label("incoming_date"),
+        )
+        .select_from(PurchaseOrder)
+        .join(ProductSku, ProductSku.sku_id == PurchaseOrder.sku_id)
+        .filter(PurchaseOrder.hub_id == hub_id)
+        .filter(PurchaseOrder.actual_arrival_date.is_(None))
+        .filter(ProductSku.product_id.in_(product_ids))
+        .group_by(ProductSku.product_id)
+        .all()
+    ) if product_ids else []
+    incoming_map = {product_id: (max(0, int(qty or 0)), arrival_date) for product_id, qty, arrival_date in incoming_rows}
+
+    other_hub_rows = (
+        db.query(ProductSku.product_id, InventoryRaw.hub_name, func.sum(InventoryRaw.available_qty).label("available"))
+        .select_from(InventoryRaw)
+        .join(ProductSku, ProductSku.sku_id == InventoryRaw.sku_id)
+        .filter(InventoryRaw.snapshot_date == REFERENCE_DATE)
+        .filter(InventoryRaw.hub_id != hub_id)
+        .filter(ProductSku.product_id.in_(product_ids))
+        .group_by(ProductSku.product_id, InventoryRaw.hub_name)
+        .all()
+    ) if product_ids else []
+    other_hub_map = {}
+    for product_id, other_hub_name, other_available in other_hub_rows:
+        qty = int(other_available or 0)
+        total, best_name, best_qty = other_hub_map.get(product_id, (0, None, -1))
+        other_hub_map[product_id] = (total + qty, other_hub_name if qty > best_qty else best_name, max(best_qty, qty))
+    products = []
+    for row in inventory_rows:
+        available = int(row.available or 0)
+        sales_28d = sales_map.get(row.product_id, 0)
+        weekly_sales = sales_28d / 4
+        daily_sales_avg = sales_28d / 28
+        safety_stock = int(math.ceil(daily_sales_avg * 28))
+        stock_gap = available - safety_stock
+        incoming_qty, incoming_date = incoming_map.get(row.product_id, (0, None))
+        other_hub_stock, other_hub_name, _ = other_hub_map.get(row.product_id, (0, None, 0))
+        products.append(HubProductInventoryItem(
+            product_id=row.product_id,
+            product_name=row.product_name,
+            sku_ids=sorted(sku_map.get(row.product_id, [])),
+            category_large=row.category_large,
+            category_middle=row.category_middle,
+            category_small=row.category_small,
+            available=available,
+            sales_28d=sales_28d,
+            wos=round(available / weekly_sales, 1) if weekly_sales > 0 else 0,
+            safety_stock=safety_stock,
+            stock_gap=stock_gap,
+            daily_sales_avg=round(daily_sales_avg, 1),
+            expected_stockout_date=REFERENCE_DATE + timedelta(days=math.ceil(available / daily_sales_avg)) if daily_sales_avg > 0 else None,
+            incoming_qty=incoming_qty,
+            incoming_date=incoming_date,
+            other_hub_stock=other_hub_stock,
+            other_hub_name=other_hub_name,
+            sales_change_7d=change_map.get(row.product_id),
+        ))
+    products.sort(key=lambda item: item.available, reverse=True)
+    return HubProductInventoryResponse(products=products)
+
+
 @router.get("/hub-inventory-matrix", response_model=HubMatrixResponse)
 def get_hub_inventory_matrix(
     top_n: int = Query(4, ge=1, le=20, description="HUB간 WOS 차이 큰 순 상위 N개 상품"),
