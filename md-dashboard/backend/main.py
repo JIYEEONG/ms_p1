@@ -4,13 +4,17 @@
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import settings
 from app.core.database import Base, engine
 from app.api.v1.router import api_router
 
 # Azure SQL DB에 정의된 모든 모델 테이블 자동 생성 (없을 경우)
-Base.metadata.create_all(bind=engine)
+try:
+    Base.metadata.create_all(bind=engine)
+except SQLAlchemyError as exc:
+    print(f"Database initialization skipped: {exc}")
 
 app = FastAPI(
     title=settings.PROJECT_NAME,

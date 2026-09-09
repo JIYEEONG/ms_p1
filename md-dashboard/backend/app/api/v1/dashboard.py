@@ -7,6 +7,8 @@
 # 기존 (ProductInventoryResponse 누락)
 # from app.schemas.dashboard import SalesTrendResponse
 
+from __future__ import annotations
+
 from datetime import date, timedelta
 import calendar
 import math

@@ -7,6 +7,8 @@
 # 26.08.09 AI고도화 작업에 따른 코드 수정
 # 26.08.XX 기간 파싱 + 되묻기(모호/범위밖) + 상단 기간 명시 추가
 
+from __future__ import annotations
+
 import json
 from openai import AzureOpenAI, OpenAI
 from app.core.config import settings

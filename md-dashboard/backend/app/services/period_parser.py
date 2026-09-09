@@ -20,6 +20,8 @@
      (파싱 자체는 성공했어도 "그 기간엔 데이터가 없다"는 별개의 문제이므로 분리).
 """
 
+from __future__ import annotations
+
 import re
 from dataclasses import dataclass, asdict
 from datetime import date, datetime, timedelta
