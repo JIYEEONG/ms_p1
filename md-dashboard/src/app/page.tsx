@@ -88,7 +88,7 @@ export default function Home() {
         allowedViews={allowedViews}
       />
 
-      <main className="main min-w-0 flex-1 pr-10 transition-all duration-300 sm:pr-12">
+      <main className="main min-w-0 flex-1 transition-all duration-300">
         <Header onViewChange={setCurrentView} allowedViews={allowedViews} />
 
         {currentView === 'overview' && allowedViews.includes('overview') && <OverviewTab onNavigate={setCurrentView} allowedViews={allowedViews} sidebarOpen={isSidebarOpen} />}

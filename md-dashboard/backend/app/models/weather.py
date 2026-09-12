@@ -4,12 +4,14 @@
 from sqlalchemy import Column, Integer, String, Float, Date, DateTime
 from sqlalchemy.sql import func
 from app.core.database import Base
+from app.core.config import settings
 
 class Weather(Base):
     """
     지역/일별 날씨 정보 테이블
     """
     __tablename__ = "weather_data"
+    __table_args__ = {"schema": settings.DB_SCHEMA} if settings.DB_SCHEMA else {}
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     date = Column(Date, index=True, nullable=False)                    # 날짜

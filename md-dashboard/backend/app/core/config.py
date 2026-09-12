@@ -4,7 +4,7 @@
 # 26.08.04 백엔드 구축 .env 환경변수 및 Azure DB 접속 설정
 
 from typing import List, Optional, Union
-from urllib.parse import quote_plus
+from urllib.parse import quote, quote_plus
 from pydantic import AnyHttpUrl, model_validator
 from pydantic_settings import BaseSettings
 
@@ -27,12 +27,14 @@ class Settings(BaseSettings):
     # true면 DB_SERVER를 강제로 localhost로 바꾸고, AI 파이프라인은 Ollama/Chroma를 사용.
     USE_LOCAL: bool = False
 
-    # DB Settings (.env 파일에서 자동으로 읽어옴, USE_LOCAL=true일 땐 DB_SERVER는 무시되고 localhost 사용)
+    # DB Settings (.env 파일에서 자동으로 읽어옴)
+    DB_DIALECT: str = "mssql"
     DB_SERVER: str = "localhost"
     DB_PORT: str = "1433"
     DB_NAME: str = "md_dashboard_local"
     DB_USER: str = "sa"
     DB_PASSWORD: str = ""
+    DB_SCHEMA: str = "dbo"
 
     # Azure AI Search & OpenAI Settings (USE_LOCAL=false일 때 필수)
     AZURE_OPENAI_ENDPOINT: Optional[str] = None
@@ -77,6 +79,13 @@ class Settings(BaseSettings):
 
     @property
     def DATABASE_URL(self) -> str:
+        if self.DB_DIALECT.lower() in {"postgres", "postgresql"}:
+            user = quote(self.DB_USER)
+            password = quote(self.DB_PASSWORD)
+            database = quote(self.DB_NAME)
+            port = self.DB_PORT or "5432"
+            return f"postgresql+psycopg2://{user}:{password}@{self.DB_SERVER}:{port}/{database}"
+
         driver = "ODBC Driver 17 for SQL Server"
         server = self.DB_SERVER
         is_local_db = server.lower() in {"localhost", "127.0.0.1", "host.docker.internal"}

@@ -99,7 +99,7 @@ def _apply_overview_filters(
         "겨울(11월1일-1월31일)": [11, 12, 1],
     }
     if season in season_months:
-        query = query.filter(func.month(Order.order_datetime).in_(season_months[season]))
+        query = query.filter(func.extract("month", Order.order_datetime).in_(season_months[season]))
 
     if hub:
         hub_ids = [
@@ -131,12 +131,15 @@ def get_sales_trend(
     if start_date > end_date:
         raise HTTPException(status_code=400, detail="시작일은 종료일보다 늦을 수 없습니다.")
 
-    bucket_sql = {
-        "week": "DATEADD(day, -(DATEDIFF(day, 0, dbo.ORDERS.order_datetime) % 7), CAST(dbo.ORDERS.order_datetime AS date))",
-        "month": "DATEFROMPARTS(YEAR(dbo.ORDERS.order_datetime), MONTH(dbo.ORDERS.order_datetime), 1)",
-        "year": "DATEFROMPARTS(YEAR(dbo.ORDERS.order_datetime), 1, 1)",
-    }
-    bucket = literal_column(bucket_sql[unit], type_=Date)
+    if settings.DB_DIALECT.lower() in {"postgres", "postgresql"}:
+        bucket = func.date_trunc(unit, Order.order_datetime).cast(Date)
+    else:
+        bucket_sql = {
+            "week": "DATEADD(day, -(DATEDIFF(day, 0, dbo.ORDERS.order_datetime) % 7), CAST(dbo.ORDERS.order_datetime AS date))",
+            "month": "DATEFROMPARTS(YEAR(dbo.ORDERS.order_datetime), MONTH(dbo.ORDERS.order_datetime), 1)",
+            "year": "DATEFROMPARTS(YEAR(dbo.ORDERS.order_datetime), 1, 1)",
+        }
+        bucket = literal_column(bucket_sql[unit], type_=Date)
     claim_totals = (
         db.query(
             Claim.order_item_id.label("order_item_id"),
@@ -697,7 +700,7 @@ def get_category_sales(
         "가을(9월1일-10월31일)": [9, 10], "겨울(11월1일-1월31일)": [11, 12, 1],
     }
     if season in season_months:
-        query = query.filter(func.month(Order.order_datetime).in_(season_months[season]))
+        query = query.filter(func.extract("month", Order.order_datetime).in_(season_months[season]))
     if hub:
         hub_ids = [row[0] for row in db.query(InventoryRaw.hub_id).filter(InventoryRaw.hub_name == hub).distinct().all()]
         query = query.filter(Order.hub_id.in_(hub_ids))

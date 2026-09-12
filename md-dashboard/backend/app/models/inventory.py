@@ -4,15 +4,17 @@
 from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime
 from sqlalchemy.sql import func
 from app.core.database import Base
+from app.core.config import settings
 
 class Inventory(Base):
     """
     HUB 및 상품별 재고 현황 테이블
     """
     __tablename__ = "inventories"
+    __table_args__ = {"schema": settings.DB_SCHEMA} if settings.DB_SCHEMA else {}
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    sku = Column(String(50), ForeignKey("products.sku"), index=True, nullable=False) # Product 외래키
+    sku = Column(String(50), ForeignKey(f"{settings.DB_SCHEMA}.products.sku" if settings.DB_SCHEMA else "products.sku"), index=True, nullable=False) # Product 외래키
     hub_name = Column(String(50), index=True, nullable=False)          # HUB 이름 (서울, 경기 등)
     
     current_stock = Column(Integer, default=0)                         # 현재 가용 재고

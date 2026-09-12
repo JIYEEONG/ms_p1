@@ -2,10 +2,11 @@
 
 from sqlalchemy import Column, String, Integer, Date, Numeric
 from app.core.database import Base
+from app.core.config import settings
 
 class PurchaseOrder(Base):
-    __tablename__ = "PURCHASE_ORDERS"
-    __table_args__ = {"schema": "dbo"}
+    __tablename__ = "df_purchase_orders_clean" if settings.DB_DIALECT.lower() in {"postgres", "postgresql"} else "PURCHASE_ORDERS"
+    __table_args__ = {"schema": settings.DB_SCHEMA} if settings.DB_SCHEMA else {}
 
     purchase_order_id = Column(String(50), primary_key=True, index=True)
     sku_id = Column(String(50), index=True, nullable=False)

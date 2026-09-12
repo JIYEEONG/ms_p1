@@ -99,10 +99,11 @@ export default function OverviewTab({ onNavigate, allowedViews, sidebarOpen }: {
   useEffect(() => {
     fetch(`${apiBaseUrl}/api/v1/dashboard/goal-settings`)
       .then((res) => {
-        if (!res.ok) throw new Error('목표 설정을 불러오지 못했습니다.');
+        if (!res.ok) return null;
         return res.json();
       })
       .then((data) => {
+        if (!data) return;
         setGoalSettings({
           day: data.day_amount,
           week: data.week_amount,
@@ -110,7 +111,9 @@ export default function OverviewTab({ onNavigate, allowedViews, sidebarOpen }: {
           year: data.year_amount,
         });
       })
-      .catch((err) => console.error('Goal settings fetch error:', err));
+      .catch(() => {
+        // Keep the built-in default goal settings when this optional API is unavailable.
+      });
   }, [apiBaseUrl]);
 
   useEffect(() => {

@@ -4,9 +4,11 @@
 from sqlalchemy import Column, Integer, String, Numeric, DateTime, Date, Unicode
 from sqlalchemy.sql import func
 from app.core.database import Base
+from app.core.config import settings
 
 class Product(Base):
     __tablename__ = "products"
+    __table_args__ = {"schema": settings.DB_SCHEMA} if settings.DB_SCHEMA else {}
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     sku = Column(String(50), unique=True, index=True, nullable=False)
@@ -20,8 +22,8 @@ class Product(Base):
 
 
 class ProductSku(Base):
-    __tablename__ = "PRODUCT_SKU"
-    __table_args__ = {"schema": "dbo"}
+    __tablename__ = "df_product_sku_clean" if settings.DB_DIALECT.lower() in {"postgres", "postgresql"} else "PRODUCT_SKU"
+    __table_args__ = {"schema": settings.DB_SCHEMA} if settings.DB_SCHEMA else {}
 
     sku_id = Column(String(50), primary_key=True, index=True)
     product_id = Column(String(50), index=True, nullable=False)

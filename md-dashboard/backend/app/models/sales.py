@@ -2,10 +2,11 @@
 
 from sqlalchemy import Column, Integer, String, Float, DateTime, Unicode
 from app.core.database import Base
+from app.core.config import settings
 
 class Order(Base):
-    __tablename__ = "ORDERS"
-    __table_args__ = {"schema": "dbo"}
+    __tablename__ = "df_orders_clean" if settings.DB_DIALECT.lower() in {"postgres", "postgresql"} else "ORDERS"
+    __table_args__ = {"schema": settings.DB_SCHEMA} if settings.DB_SCHEMA else {}
 
     order_item_id = Column(String(50), primary_key=True, index=True)
     order_datetime = Column(DateTime, nullable=False)

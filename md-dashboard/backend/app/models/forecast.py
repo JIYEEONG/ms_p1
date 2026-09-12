@@ -2,10 +2,11 @@
 
 from sqlalchemy import Column, String, BigInteger, Float, Date
 from app.core.database import Base
+from app.core.config import settings
 
 class DemandForecastResult(Base):
     __tablename__ = "demand_forecast_results"
-    __table_args__ = {"schema": "dbo"}
+    __table_args__ = {"schema": settings.DB_SCHEMA} if settings.DB_SCHEMA else {}
 
     product_id = Column(String(50), primary_key=True, index=True)
     category_large = Column(String(50))

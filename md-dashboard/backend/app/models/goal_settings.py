@@ -2,10 +2,11 @@
 
 from sqlalchemy import Column, Integer, BigInteger, DateTime, func
 from app.core.database import Base
+from app.core.config import settings
 
 class GoalSettings(Base):
     __tablename__ = "GOAL_SETTINGS"
-    __table_args__ = {"schema": "dbo"}
+    __table_args__ = {"schema": settings.DB_SCHEMA} if settings.DB_SCHEMA else {}
 
     id = Column(Integer, primary_key=True)
     day_amount = Column(BigInteger, nullable=False)
